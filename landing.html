@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orchestrated RAG — High-Accuracy Document Q&A</title>
+<meta name="description" content="Production-grade Retrieval-Augmented Generation system with hybrid retrieval, contextual enrichment, and real-time streaming answers. CPU-friendly, multi-LLM support.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ─────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:#050A14;
+  color:#E8E0D0;
+  line-height:1.7;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+
+/* ── Utility ──────────────────────────────────────────── */
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+.accent{color:#F5A623}
+.mono{font-family:'IBM Plex Mono',monospace}
+.section-label{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.75rem;
+  letter-spacing:3px;
+  text-transform:uppercase;
+  color:#F5A623;
+  margin-bottom:12px;
+  display:block;
+}
+.section-title{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(1.8rem,4vw,2.6rem);
+  font-weight:700;
+  line-height:1.2;
+  margin-bottom:20px;
+}
+.section-desc{
+  color:#A0998C;
+  max-width:560px;
+  font-size:1.05rem;
+}
+
+/* ── Animated bg mesh (hero) ──────────────────────────── */
+@keyframes meshMove{
+  0%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+  100%{background-position:0% 50%}
+}
+@keyframes float{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-18px)}
+}
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(32px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes pulse{
+  0%,100%{opacity:.45}
+  50%{opacity:1}
+}
+@keyframes gradientShift{
+  0%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+  100%{background-position:0% 50%}
+}
+
+.reveal{opacity:0;transform:translateY(32px);transition:opacity .7s ease,transform .7s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* ── Navbar ───────────────────────────────────────────── */
+.navbar{
+  position:fixed;top:0;left:0;width:100%;z-index:100;
+  padding:16px 0;
+  background:rgba(5,10,20,.7);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(245,166,35,.06);
+  transition:padding .3s;
+}
+.navbar.scrolled{padding:10px 0;background:rgba(5,10,20,.92)}
+.navbar .container{display:flex;align-items:center;justify-content:space-between}
+.nav-brand{display:flex;align-items:center;gap:10px}
+.nav-brand svg{width:28px;height:28px}
+.nav-brand span{font-family:'Syne',sans-serif;font-weight:700;font-size:1.15rem}
+.nav-links{display:flex;align-items:center;gap:32px;list-style:none}
+.nav-links a{font-size:.9rem;font-weight:500;color:#A0998C;transition:color .2s}
+.nav-links a:hover{color:#F5A623}
+.nav-cta{
+  background:linear-gradient(135deg,#F5A623,#E8891A);
+  color:#050A14;
+  padding:10px 24px;
+  border-radius:10px;
+  font-weight:600;
+  font-size:.9rem;
+  transition:transform .2s,box-shadow .2s;
+  cursor:pointer;
+  border:none;
+}
+.nav-cta:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(245,166,35,.3)}
+.mobile-toggle{display:none;background:none;border:none;color:#E8E0D0;cursor:pointer}
+
+/* ── Hero ─────────────────────────────────────────────── */
+.hero{
+  position:relative;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  overflow:hidden;
+  padding:120px 0 80px;
+}
+.hero-mesh{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 40%,rgba(245,166,35,.08),transparent),
+    radial-gradient(ellipse 60% 50% at 80% 30%,rgba(59,130,246,.06),transparent),
+    radial-gradient(ellipse 70% 70% at 50% 80%,rgba(139,92,246,.05),transparent);
+  background-size:200% 200%;
+  animation:meshMove 18s ease infinite;
+}
+.hero-particles{position:absolute;inset:0;pointer-events:none}
+.hero-particle{
+  position:absolute;
+  width:3px;height:3px;
+  background:#F5A623;
+  border-radius:50%;
+  opacity:.3;
+  animation:float 6s ease-in-out infinite;
+}
+.hero .container{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;text-align:center}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(245,166,35,.08);
+  border:1px solid rgba(245,166,35,.2);
+  border-radius:100px;
+  padding:6px 18px;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.78rem;
+  color:#F5A623;
+  margin-bottom:28px;
+  animation:fadeUp .8s ease both;
+}
+.hero-badge .dot{width:6px;height:6px;background:#F5A623;border-radius:50%;animation:pulse 2s ease infinite}
+.hero h1{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(2.4rem,6vw,4.4rem);
+  font-weight:800;
+  line-height:1.1;
+  max-width:800px;
+  margin-bottom:24px;
+  animation:fadeUp .8s ease .1s both;
+}
+.hero h1 .gradient-text{
+  background:linear-gradient(135deg,#F5A623 0%,#F7C96E 50%,#F5A623 100%);
+  background-size:200% 200%;
+  animation:gradientShift 4s ease infinite;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.hero p{
+  font-size:clamp(1rem,2vw,1.2rem);
+  color:#A0998C;
+  max-width:600px;
+  margin-bottom:40px;
+  animation:fadeUp .8s ease .2s both;
+}
+.hero-buttons{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;animation:fadeUp .8s ease .3s both}
+.btn-primary{
+  display:inline-flex;align-items:center;gap:8px;
+  background:linear-gradient(135deg,#F5A623,#E8891A);
+  color:#050A14;
+  padding:14px 32px;
+  border-radius:12px;
+  font-weight:600;
+  font-size:1rem;
+  transition:transform .2s,box-shadow .2s;
+  cursor:pointer;border:none;
+}
+.btn-primary:hover{transform:translateY(-3px);box-shadow:0 12px 36px rgba(245,166,35,.3)}
+.btn-secondary{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(232,224,208,.06);
+  border:1px solid rgba(232,224,208,.12);
+  color:#E8E0D0;
+  padding:14px 32px;
+  border-radius:12px;
+  font-weight:500;
+  font-size:1rem;
+  transition:all .2s;
+  cursor:pointer;
+}
+.btn-secondary:hover{background:rgba(232,224,208,.1);border-color:rgba(232,224,208,.2);transform:translateY(-2px)}
+.hero-stats{
+  display:flex;gap:48px;margin-top:64px;
+  animation:fadeUp .8s ease .45s both;
+}
+.hero-stat{text-align:center}
+.hero-stat .value{font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:700;color:#F5A623}
+.hero-stat .label{font-size:.8rem;color:#6B6560;margin-top:4px}
+
+/* ── Features ─────────────────────────────────────────── */
+.features{padding:120px 0}
+.features-header{text-align:center;margin-bottom:64px}
+.features-header .section-desc{margin:0 auto}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px}
+.feature-card{
+  background:rgba(232,224,208,.03);
+  border:1px solid rgba(232,224,208,.06);
+  border-radius:16px;
+  padding:36px 32px;
+  transition:transform .3s,border-color .3s,box-shadow .3s;
+  position:relative;
+  overflow:hidden;
+}
+.feature-card::before{
+  content:'';
+  position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,#F5A623,transparent);
+  opacity:0;
+  transition:opacity .3s;
+}
+.feature-card:hover{
+  transform:translateY(-6px);
+  border-color:rgba(245,166,35,.15);
+  box-shadow:0 20px 60px rgba(0,0,0,.3),0 0 40px rgba(245,166,35,.04);
+}
+.feature-card:hover::before{opacity:1}
+.feature-icon{
+  width:48px;height:48px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(245,166,35,.08);
+  border-radius:12px;
+  margin-bottom:20px;
+  color:#F5A623;
+}
+.feature-card h3{font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:600;margin-bottom:10px}
+.feature-card p{color:#8A837A;font-size:.95rem;line-height:1.6}
+
+/* ── Pipeline ─────────────────────────────────────────── */
+.pipeline{padding:120px 0;background:rgba(245,166,35,.015)}
+.pipeline-header{text-align:center;margin-bottom:64px}
+.pipeline-header .section-desc{margin:0 auto}
+.pipeline-flow{
+  display:flex;flex-direction:column;
+  gap:0;
+  max-width:720px;
+  margin:0 auto;
+}
+.pipeline-step{
+  display:flex;align-items:stretch;gap:20px;
+  position:relative;
+}
+.pipeline-line{
+  display:flex;flex-direction:column;align-items:center;
+  width:40px;flex-shrink:0;
+}
+.pipeline-dot{
+  width:14px;height:14px;
+  border-radius:50%;
+  border:2px solid #F5A623;
+  background:#050A14;
+  flex-shrink:0;
+  z-index:2;
+  transition:background .3s;
+}
+.pipeline-step:hover .pipeline-dot{background:#F5A623}
+.pipeline-connector{
+  flex:1;width:2px;
+  background:linear-gradient(180deg,rgba(245,166,35,.3),rgba(245,166,35,.08));
+}
+.pipeline-content{
+  background:rgba(232,224,208,.03);
+  border:1px solid rgba(232,224,208,.06);
+  border-radius:12px;
+  padding:20px 24px;
+  flex:1;
+  margin-bottom:8px;
+  transition:border-color .3s;
+}
+.pipeline-step:hover .pipeline-content{border-color:rgba(245,166,35,.2)}
+.pipeline-content .step-num{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.7rem;
+  letter-spacing:2px;
+  color:#F5A623;
+  text-transform:uppercase;
+  margin-bottom:6px;
+}
+.pipeline-content h4{font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:600;margin-bottom:6px}
+.pipeline-content p{color:#8A837A;font-size:.88rem;line-height:1.5}
+
+/* ── Tech Stack ───────────────────────────────────────── */
+.techstack{padding:100px 0}
+.techstack-header{text-align:center;margin-bottom:48px}
+.techstack-header .section-desc{margin:0 auto}
+.tech-pills{
+  display:flex;flex-wrap:wrap;justify-content:center;gap:14px;
+  max-width:800px;margin:0 auto;
+}
+.tech-pill{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(232,224,208,.04);
+  border:1px solid rgba(232,224,208,.08);
+  border-radius:100px;
+  padding:10px 22px;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.85rem;
+  color:#C4BDB3;
+  transition:all .25s;
+}
+.tech-pill:hover{
+  border-color:rgba(245,166,35,.25);
+  color:#F5A623;
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(0,0,0,.2);
+}
+.tech-pill svg{width:18px;height:18px;flex-shrink:0}
+
+/* ── Get Started ──────────────────────────────────────── */
+.getstarted{padding:120px 0;background:rgba(245,166,35,.015)}
+.getstarted-header{text-align:center;margin-bottom:64px}
+.getstarted-header .section-desc{margin:0 auto}
+.steps-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:24px;
+  max-width:1100px;margin:0 auto;
+}
+.step-card{
+  background:rgba(232,224,208,.03);
+  border:1px solid rgba(232,224,208,.06);
+  border-radius:16px;
+  padding:32px 28px;
+  position:relative;
+}
+.step-number{
+  font-family:'Syne',sans-serif;
+  font-size:2.4rem;
+  font-weight:800;
+  color:rgba(245,166,35,.12);
+  position:absolute;top:16px;right:20px;
+}
+.step-card h4{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:600;margin-bottom:10px}
+.step-card p{color:#8A837A;font-size:.92rem;margin-bottom:14px}
+.step-card code{
+  display:block;
+  background:rgba(0,0,0,.4);
+  border:1px solid rgba(232,224,208,.06);
+  border-radius:8px;
+  padding:10px 14px;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:.82rem;
+  color:#F5A623;
+  word-break:break-all;
+}
+
+/* ── CTA Banner ───────────────────────────────────────── */
+.cta-banner{
+  padding:100px 0;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.cta-banner::before{
+  content:'';position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 50%,rgba(245,166,35,.07),transparent);
+}
+.cta-banner .container{position:relative;z-index:2}
+.cta-banner h2{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(1.8rem,4vw,2.8rem);
+  font-weight:700;
+  margin-bottom:16px;
+}
+.cta-banner p{color:#A0998C;font-size:1.1rem;max-width:480px;margin:0 auto 36px}
+
+/* ── Footer ───────────────────────────────────────────── */
+.footer{
+  padding:40px 0;
+  border-top:1px solid rgba(232,224,208,.06);
+}
+.footer .container{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:16px;
+}
+.footer-left{color:#6B6560;font-size:.85rem}
+.footer-right{display:flex;gap:24px}
+.footer-right a{color:#6B6560;font-size:.85rem;transition:color .2s}
+.footer-right a:hover{color:#F5A623}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media(max-width:768px){
+  .nav-links{display:none}
+  .mobile-toggle{display:block}
+  .hero-stats{gap:28px}
+  .features-grid{grid-template-columns:1fr}
+  .steps-grid{grid-template-columns:1fr}
+  .footer .container{flex-direction:column;text-align:center}
+}
+@media(max-width:480px){
+  .hero h1{font-size:2rem}
+  .hero-buttons{flex-direction:column;width:100%;align-items:stretch}
+  .hero-buttons a,.hero-buttons button{width:100%;justify-content:center}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ NAVBAR ═══════════════ -->
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="#" class="nav-brand">
+      <svg viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="12" stroke="#F5A623" stroke-width="2"/><path d="M9 14l3 3 7-7" stroke="#F5A623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Orchestrated RAG</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#pipeline">Architecture</a></li>
+      <li><a href="#getstarted">Get Started</a></li>
+      <li><a href="/app" class="nav-cta">Launch App →</a></li>
+    </ul>
+    <button class="mobile-toggle" onclick="document.querySelector('.nav-links').classList.toggle('show')" aria-label="Toggle menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section class="hero" id="hero">
+  <div class="hero-mesh"></div>
+  <div class="hero-particles" id="particles"></div>
+  <div class="container">
+    <div class="hero-badge"><span class="dot"></span> Open Source · MIT License</div>
+    <h1>Ask Your Documents<br><span class="gradient-text">Anything.</span></h1>
+    <p>A 9-stage RAG pipeline with hybrid retrieval, contextual enrichment, and self-critique — delivering accurate, hallucination-free answers from your own documents in real time.</p>
+    <div class="hero-buttons">
+      <a href="/app" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Launch App
+      </a>
+      <a href="https://github.com/Hitanshu-Varia/Orchestrated_RAG" target="_blank" class="btn-secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="value">9</div><div class="label">Pipeline Stages</div></div>
+      <div class="hero-stat"><div class="value">35–49%</div><div class="label">Retrieval Gain</div></div>
+      <div class="hero-stat"><div class="value">0</div><div class="label">GPU Required</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FEATURES ═══════════════ -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="features-header reveal">
+      <span class="section-label">Capabilities</span>
+      <h2 class="section-title">Every Layer, Engineered for Accuracy</h2>
+      <p class="section-desc">Six core techniques working in concert to deliver precise, source-grounded answers from your documents.</p>
+    </div>
+    <div class="features-grid">
+      <!-- Card 1 -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </div>
+        <h3>Hybrid Retrieval</h3>
+        <p>Combines dense vector search (Qdrant) with sparse BM25 keyword matching for maximum recall on every query.</p>
+      </div>
+      <!-- Card 2 -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3>Contextual Enrichment</h3>
+        <p>LLM-generated context per chunk improves retrieval accuracy by 35–49%, as validated by Anthropic's research.</p>
+      </div>
+      <!-- Card 3 -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M21 3l-7 7"/><path d="M3 3l7 7"/><path d="M3 21l7-7"/><path d="M21 21l-7-7"/><path d="M16 21h5v-5"/><path d="M8 21H3v-5"/></svg>
+        </div>
+        <h3>Query Decomposition</h3>
+        <p>Splits complex, multi-part questions into focused sub-queries, then fuses results with reciprocal rank fusion.</p>
+      </div>
+      <!-- Card 4 -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <h3>CRAG Gate</h3>
+        <p>Intelligent sufficiency check — if documents fall short, Tavily web search kicks in as a seamless fallback.</p>
+      </div>
+      <!-- Card 5 -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <h3>Self-Critique</h3>
+        <p>Post-generation hallucination detection compares the answer against context and auto-corrects when needed.</p>
+      </div>
+      <!-- Card 6 -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <h3>Real-Time Streaming</h3>
+        <p>Token-by-token SSE delivery with live pipeline stage indicators — watch the answer assemble in real time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ PIPELINE ═══════════════ -->
+<section class="pipeline" id="pipeline">
+  <div class="container">
+    <div class="pipeline-header reveal">
+      <span class="section-label">Architecture</span>
+      <h2 class="section-title">9-Stage Orchestrated Pipeline</h2>
+      <p class="section-desc">Every query passes through a carefully orchestrated sequence of retrieval, ranking, and reasoning stages.</p>
+    </div>
+    <div class="pipeline-flow">
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 01</div><h4>Query Decomposition</h4><p>Split complex questions into focused sub-queries for targeted retrieval.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 02</div><h4>HyDE Expansion</h4><p>Generate hypothetical answers to improve embedding similarity matching.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 03</div><h4>Hybrid Retrieval</h4><p>Vector search (Qdrant) + BM25 keyword search running in parallel.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 04</div><h4>RAG-Fusion</h4><p>Reciprocal rank fusion merges results with source diversity enforcement.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 05</div><h4>Cohere Rerank</h4><p>Neural reranking selects the top 8 most relevant chunks.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 06</div><h4>Context Compression</h4><p>Cross-encoder sentence-level filtering removes noise from context.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 07</div><h4>CRAG Gate</h4><p>Sufficiency check — triggers Tavily web search if documents are inadequate.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 08</div><h4>LLM Generation</h4><p>Streamed answer generation using NVIDIA Nemotron via OpenRouter.</p></div>
+      </div>
+      <div class="pipeline-step reveal">
+        <div class="pipeline-line"><div class="pipeline-dot"></div><div class="pipeline-connector" style="opacity:0"></div></div>
+        <div class="pipeline-content"><div class="step-num">Stage 09</div><h4>Self-Critique</h4><p>Hallucination detection compares output against source context.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ TECH STACK ═══════════════ -->
+<section class="techstack" id="techstack">
+  <div class="container">
+    <div class="techstack-header reveal">
+      <span class="section-label">Built With</span>
+      <h2 class="section-title">Modern, Open-Source Stack</h2>
+      <p class="section-desc">Batteries-included with free-tier-friendly services. No GPU required.</p>
+    </div>
+    <div class="tech-pills reveal">
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        LlamaIndex
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        Qdrant
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        FastAPI
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Cohere Rerank
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Groq
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        Tavily Search
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        HuggingFace Embeddings
+      </div>
+      <div class="tech-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>
+        OpenRouter
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ GET STARTED ═══════════════ -->
+<section class="getstarted" id="getstarted">
+  <div class="container">
+    <div class="getstarted-header reveal">
+      <span class="section-label">Quickstart</span>
+      <h2 class="section-title">Up and Running in 4 Steps</h2>
+      <p class="section-desc">From zero to querying your documents in under 5 minutes.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card reveal">
+        <div class="step-number">01</div>
+        <h4>Install Dependencies</h4>
+        <p>Clone the repo and install Python packages.</p>
+        <code>pip install -r requirements.txt</code>
+      </div>
+      <div class="step-card reveal">
+        <div class="step-number">02</div>
+        <h4>Set API Keys</h4>
+        <p>Create a <span class="mono">.env</span> file with your free-tier keys.</p>
+        <code>GROQ_API_KEY=...<br>COHERE_API_KEY=...<br>TAVILY_API_KEY=...</code>
+      </div>
+      <div class="step-card reveal">
+        <div class="step-number">03</div>
+        <h4>Ingest Documents</h4>
+        <p>Drop PDFs, DOCX, MD, or TXT into <span class="mono">docs/</span> and run:</p>
+        <code>python ingest.py</code>
+      </div>
+      <div class="step-card reveal">
+        <div class="step-number">04</div>
+        <h4>Launch</h4>
+        <p>Start the web server and open the UI.</p>
+        <code>python server.py<br><span style="color:#6B6560"># → localhost:8000</span></code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ CTA BANNER ═══════════════ -->
+<section class="cta-banner">
+  <div class="container reveal">
+    <h2>Start Querying Your Documents</h2>
+    <p>Drop your files, ask questions, get accurate answers backed by source citations.</p>
+    <a href="/app" class="btn-primary" style="font-size:1.05rem;padding:16px 40px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Open the App
+    </a>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-left">© 2025 Orchestrated RAG · MIT License</div>
+    <div class="footer-right">
+      <a href="https://github.com/Hitanshu-Varia/Orchestrated_RAG" target="_blank">GitHub</a>
+      <a href="/app">App</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ═══════════════ SCRIPTS ═══════════════ -->
+<script>
+// ── Particles ────────────────────────────────────────
+(function(){
+  const c = document.getElementById('particles');
+  for(let i=0;i<30;i++){
+    const p = document.createElement('div');
+    p.className='hero-particle';
+    p.style.left = Math.random()*100+'%';
+    p.style.top  = Math.random()*100+'%';
+    p.style.animationDelay = (Math.random()*6)+'s';
+    p.style.animationDuration = (4+Math.random()*4)+'s';
+    p.style.opacity = (.15+Math.random()*.3).toFixed(2);
+    p.style.width = p.style.height = (2+Math.random()*3)+'px';
+    c.appendChild(p);
+  }
+})();
+
+// ── Navbar scroll ────────────────────────────────────
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll',()=>{
+  navbar.classList.toggle('scrolled', window.scrollY > 60);
+},{passive:true});
+
+// ── Reveal on scroll (IntersectionObserver) ──────────
+const obs = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}
+  });
+},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
+document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+</script>
+</body>
+</html>
