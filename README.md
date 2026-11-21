@@ -7,7 +7,6 @@ The project explores how hybrid search, query expansion, reranking, context filt
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square)
 ![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.10.68-purple?style=flat-square)
-![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
 ## Project Highlights
 
@@ -213,9 +212,9 @@ See [Evaluation Guide](project_docs/EVALUATION.md) for a reproducible comparison
 - Exposing an AI workflow through FastAPI and a streaming web interface.
 - Designing regression questions and evaluating retrieval quality.
 
-## License
+## License status
 
-The repository is marked as MIT licensed. See the repository's `LICENSE` file for the license text.
+This repository currently has no `LICENSE` file. Do not assume the code is MIT-licensed or grant reuse rights until the project owner has selected and added an appropriate license. The reference repository reviewed during the project audit also has no declared license; obtain permission before reusing its code.
 
 ---
 
