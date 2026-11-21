@@ -6,13 +6,13 @@ This is a source-level review of the current FastAPI server and configuration. I
 
 ## Findings to address before public use
 
-### 1. API endpoints do not show authentication
+### 1. Authentication is implemented as a single shared login; per-user authorization is still missing
 
-The current `server.py` exposes query and conversation-management routes, including conversation listing, reading, renaming, and deletion. No authentication dependency or authorization check was present in the reviewed route definitions.
+The current `server.py` applies a server-side HTTP Basic authentication gate to the landing page, chat UI, and API routes. `/api/status` remains public. The gate reads `APP_USERNAME` and `APP_PASSWORD` from the deployment environment and fails closed if either is missing.
 
-**Risk:** if the service is reachable from the public internet, unauthenticated visitors may be able to submit expensive model queries and access or alter conversation history.
+**Remaining risk:** everyone who knows the shared credentials has the same access. Conversation history is still shared, and there is no per-user ownership check. This is a basic private-demo barrier, not multi-user authorization.
 
-**Required action:** add authentication and per-user authorization before public use. Ensure every conversation is scoped to its owner; a shared random conversation ID is not an authorization boundary.
+**Required action:** keep the service private and use HTTPS. Before accepting multiple users or sensitive documents, implement individual identity and enforce owner-scoped access to every conversation and document.
 
 ### 2. CORS is not authentication
 
