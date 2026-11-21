@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "false"
 
       - name: Run evaluator unit tests
         run: python -m unittest discover -s evaluation -p "test_*.py" -v
