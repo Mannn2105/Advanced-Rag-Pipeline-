@@ -1,27 +1,25 @@
 # Orchestrated RAG — Advanced Retrieval-Augmented Generation
 
-A document question-answering project that combines multiple retrieval and reasoning techniques to improve the relevance of answers grounded in a user's own files. It includes a FastAPI backend, a browser-based chat interface, streaming responses, and source attribution.
+A document question-answering project that combines multiple retrieval and reasoning techniques to answer questions grounded in a user's own files. It includes a FastAPI backend, browser-based chat interface, streaming responses, and source attribution.
 
-The project explores how hybrid search, query expansion, reranking, context filtering, and fallback retrieval can work together in a multi-stage RAG workflow.
+The project explores how hybrid search, query expansion, reranking, context filtering, and fallback retrieval work together in a multi-stage RAG workflow.
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square)
 ![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.10.68-purple?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
----
-
 ## Project Highlights
 
 - **Hybrid retrieval:** combines Qdrant vector search with BM25 keyword search.
-- **Query decomposition:** breaks complex questions into smaller sub-queries.
-- **HyDE and RAG-Fusion:** expands retrieval coverage and combines ranked results.
-- **Contextual enrichment:** adds generated context to document chunks during ingestion.
+- **Query decomposition and HyDE:** expands complex questions and improves semantic retrieval coverage.
+- **RAG-Fusion:** merges ranked results from multiple retrieval queries using reciprocal rank fusion.
+- **Contextual enrichment:** adds document-level context to chunks during ingestion.
 - **Reranking:** uses Cohere reranking to improve the ordering of retrieved passages.
-- **Context compression:** filters retrieved text before generation.
-- **CRAG-style fallback:** can use Tavily web search when the document context is insufficient.
+- **Context compression:** uses a cross-encoder to retain query-relevant sentences.
+- **CRAG-style fallback:** can use Tavily web search when document context is insufficient.
 - **Answer review:** includes a self-critique stage intended to identify unsupported responses.
-- **Streaming interface:** FastAPI server streams answers to a browser UI, with conversation history and source information.
+- **Streaming interface:** FastAPI streams answers to a browser UI with conversation history and source information.
 
 ## Technology Stack
 
@@ -39,65 +37,52 @@ The project explores how hybrid search, query expansion, reranking, context filt
 | Document parsing | Docling (optional advanced parsing) |
 | Interface | HTML, CSS and JavaScript |
 
-## Architecture
+## System Architecture
 
-The workflow is designed as a sequence of retrieval and answer-generation stages:
+The diagram below summarizes the main flow implemented by the project. Some stages, such as query decomposition and web fallback, are conditional on the query and pipeline configuration.
 
-```text
-                    User question
-                          |
-                 Query decomposition
-                          |
-                    HyDE expansion
-                          |
-                 +--------+--------+
-                 |                 |
-           Qdrant vector       BM25 keyword
-              search             search
-                 |                 |
-                 +--------+--------+
-                          |
-                     RAG-Fusion
-                          |
-                    Cohere rerank
-                          |
-                  Context compression
-                          |
-                 Context sufficiency gate
-                    /           \
-             Sufficient       Insufficient
-                 |                 |
-                 |           Tavily search
-                 |                 |
-                 +--------+--------+
-                          |
-                    LLM generation
-                          |
-                    Self-critique
-                          |
-                  Streamed final answer
-                    with source details
+```mermaid
+flowchart TD
+    A[User question] --> B[Query decomposition]
+    B --> C[HyDE query expansion]
+    C --> D1[Qdrant vector retrieval]
+    C --> D2[BM25 keyword retrieval]
+    B --> D1
+    B --> D2
+    D1 --> E[RAG-Fusion<br/>Reciprocal Rank Fusion]
+    D2 --> E
+    E --> F[Source diversity filtering]
+    F --> G[Cohere reranking]
+    G --> H[Cross-encoder context compression]
+    H --> I{Context sufficient?}
+    I -- Yes --> J[LLM answer generation]
+    I -- No --> K[Tavily web fallback]
+    K --> J
+    J --> L[Answer review / self-critique]
+    L --> M[Stream response with sources]
 ```
+
+For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md).
 
 ## Repository Structure
 
 ```text
-rag_project/
-├── docs/                # Input documents
-├── qdrant_db/           # Persistent local vector store
-├── graph_cache/         # Cache directory
-├── config.py            # Model and retrieval configuration
-├── ingest.py            # Document parsing and indexing
-├── pipeline.py          # Multi-stage RAG pipeline
+.
+├── project_docs/        # Architecture and evaluation documentation
+├── docs/                # Documents supplied for ingestion at runtime
+├── config.py            # Model, retrieval and application configuration
+├── ingest.py            # Document parsing, enrichment and indexing
+├── pipeline.py          # Multi-stage retrieval and generation pipeline
 ├── query.py             # Terminal Q&A interface
 ├── server.py            # FastAPI server and streaming endpoint
-├── app.html             # Browser interface
-├── tests.py             # Test suite
+├── app.html             # Browser chat interface
+├── landing.html         # Project landing page
+├── tests.py             # Question-based regression/evaluation runner
 ├── requirements.txt     # Python dependencies
 └── README.md
 ```
 
-Generated data directories and local secrets may be created at runtime and should not be committed unless intentionally required.
+Generated vector stores, caches, test outputs, local documents, and secrets should remain local unless intentionally prepared for sharing.
 
 ## Getting Started
 
@@ -117,7 +102,7 @@ python -m venv .venv
 Windows PowerShell:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+.venv\\Scripts\\Activate.ps1
 ```
 
 macOS / Linux:
@@ -132,7 +117,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-For optional advanced document parsing, install the Docling-related packages used by the project:
+For optional structure-aware parsing with Docling, install the additional packages noted in the project setup:
 
 ```bash
 pip install docling llama-index-readers-docling llama-index-node-parser-docling
@@ -140,7 +125,7 @@ pip install docling llama-index-readers-docling llama-index-node-parser-docling
 
 ### 4. Configure API keys
 
-Create a local `.env` file in the project root and add the credentials required by the providers and services enabled in your configuration.
+Create a local `.env` file in the project root. Add the credentials for the providers and services enabled in your configuration:
 
 ```dotenv
 GROQ_API_KEY=your_groq_key
@@ -149,13 +134,11 @@ COHERE_API_KEY=your_cohere_key
 TAVILY_API_KEY=your_tavily_key
 ```
 
-Keep real credentials private. Do not commit the `.env` file or paste API keys into issues, screenshots, or documentation.
+Never commit real API keys. Keep `.env` private and use `.env.example` with placeholders if sharing configuration.
 
 ### 5. Add documents and build the index
 
-Place supported files in the `docs/` directory. The project README describes support for PDF, DOCX, TXT, Markdown, and CSV files.
-
-Run ingestion:
+Place supported files (PDF, DOCX, TXT, Markdown, or CSV) in the runtime `docs/` directory, then run:
 
 ```bash
 python ingest.py
@@ -163,13 +146,11 @@ python ingest.py
 
 ### 6. Run the application
 
-Start the web application:
-
 ```bash
 python server.py
 ```
 
-Then open [http://localhost:8000](http://localhost:8000).
+Open [http://localhost:8000](http://localhost:8000).
 
 For terminal-based question answering:
 
@@ -179,12 +160,12 @@ python query.py
 
 ## Configuration
 
-The main configuration is managed in `config.py`. The current project defaults documented here include:
+The main configuration is managed in `config.py`. These are the defaults currently defined in the repository:
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Fast model for supporting pipeline tasks |
-| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b` | Answer generation |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` | Supporting pipeline tasks |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Answer generation |
 | `EMBED_MODEL` | `BAAI/bge-large-en-v1.5` | Local embedding model |
 | `COHERE_RERANK` | `rerank-english-v3.0` | Reranking |
 | `VECTOR_TOP_K` | `15` | Vector retrieval candidates |
@@ -193,64 +174,47 @@ The main configuration is managed in `config.py`. The current project defaults d
 | `CHUNK_SIZE` | `512` | Fallback chunk size |
 | `VERBOSE` | `True` | Pipeline logging |
 
-Check `config.py` for the authoritative settings and provider requirements for your checkout.
+Check `config.py` for the authoritative settings and provider requirements.
 
-## Testing
+## Tests and Evaluation
 
-Run the test suite:
+Run the project's question-based regression/evaluation runner:
 
 ```bash
 python tests.py
 ```
 
-Run an individual test by ID (where supported by the test runner):
+Run a specific test group or test ID using the runner's supported arguments:
 
 ```bash
-python tests.py --test P-02
+python tests.py --group R
+python tests.py --test R-01
 ```
 
-## Performance and Evaluation
+The test runner queries the configured pipeline and therefore requires the local index, documents, and relevant provider credentials to be set up. A successful run has not been claimed as part of this repository documentation update.
 
-The original project notes report approximate query times of 5–10 seconds on a CPU-based setup and a 35–49% reduction in retrieval failures attributed to contextual enrichment.
-
-These figures are project-reported results, not independently verified benchmarks. Actual performance depends on document size, hardware, model/provider latency, network conditions, and configuration. Before comparing versions or presenting these figures as measured results, record the dataset, hardware, baseline, evaluation questions, retrieval metric, and repeated-run methodology.
-
-A useful next evaluation step is to compare:
-- Vector-only retrieval
-- BM25-only retrieval
-- Hybrid retrieval
-- Hybrid retrieval with contextual enrichment and reranking
-
-Track retrieval metrics such as Recall@k and MRR, along with answer quality, latency, and API cost.
+See [Evaluation Guide](project_docs/EVALUATION.md) for a reproducible comparison plan, metric definitions, and a results template. Do not present the historical 35–49% contextual-retrieval figure as a benchmark measured by this project: it is a research-reported result, not independently verified here.
 
 ## Security and Responsible Use
 
 - Keep API keys in environment variables and out of source control.
 - Treat retrieved documents and web results as untrusted input.
-- Validate and constrain any generated actions or queries before execution.
-- Review source passages when answers are important; retrieval and self-critique do not guarantee factual correctness.
-- Apply rate limits and appropriate access controls before exposing the server beyond a trusted local environment.
-
-## Possible Future Improvements
-
-- Add a reproducible benchmark dataset and evaluation script.
-- Add automated tests for ingestion, retrieval, and API endpoints.
-- Support configurable retrieval ablation experiments.
-- Improve observability for latency, token usage, and provider errors.
-- Add deployment documentation and authentication before public hosting.
+- Review source passages for important decisions; retrieval and self-critique do not guarantee factual correctness.
+- Apply authentication, rate limits, and appropriate access controls before exposing the server beyond a trusted local environment.
+- Avoid indexing confidential or personal documents unless you have permission and understand where embeddings and provider requests are processed.
 
 ## What This Project Demonstrates
 
-- Building a multi-stage RAG pipeline in Python
-- Combining vector and keyword retrieval
-- Applying query expansion, fusion, reranking, and context compression
-- Integrating external model and search APIs
-- Exposing an AI workflow through FastAPI and a streaming web interface
-- Thinking about evaluation, security, and retrieval quality
+- Building a multi-stage RAG pipeline in Python.
+- Combining vector and keyword retrieval.
+- Applying query expansion, reciprocal rank fusion, reranking, and context compression.
+- Integrating model providers and external search APIs.
+- Exposing an AI workflow through FastAPI and a streaming web interface.
+- Designing regression questions and evaluating retrieval quality.
 
 ## License
 
-This repository is marked as MIT licensed. See the repository's `LICENSE` file for the license text.
+The repository is marked as MIT licensed. See the repository's `LICENSE` file for the license text.
 
 ---
 
