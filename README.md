@@ -61,7 +61,7 @@ flowchart TD
     L --> M[Stream response with sources]
 ```
 
-For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md). Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md) and [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md) before exposing the API publicly. Before exposing the API publicly, review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md).
+For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md). Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md) before exposing the API publicly.
 
 ## Repository Structure
 
