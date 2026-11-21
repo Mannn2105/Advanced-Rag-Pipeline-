@@ -23,15 +23,15 @@ llama-index-retrievers-bm25==0.2.0
 rank-bm25==0.2.2
 
 # ── Document Parsing ─────────────────────────────────────────
-# Docling: structure-aware parsing (tables, headings, signatures)
-# Install separately — large download (~2GB models on first run)
-# pip install docling llama-index-readers-docling llama-index-node-parser-docling
 pypdf==4.3.1
 docx2txt==0.8
 
 # ── Web Fallback ──────────────────────────────────────────────
 tavily-python==0.3.9
 
-# ── Utilities ─────────────────────────────────────────────────
+# ── API server and utilities ───────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-dotenv==1.0.1
 rich==13.8.1
 aiofiles==24.1.0
