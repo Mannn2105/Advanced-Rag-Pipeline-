@@ -59,7 +59,7 @@ final_llm = None
 index = None
 nodes_store = None
 
-CHAT_HISTORY_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
+CHAT_HISTORY_PATH = os.path.join(config.QDRANT_DIR, "chat_history.json")
 
 
 # ── Chat History Helpers ──────────────────────────────────────
