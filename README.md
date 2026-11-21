@@ -29,7 +29,7 @@ The project explores how hybrid search, query expansion, reranking, context filt
 | RAG orchestration | LlamaIndex |
 | Vector database | Qdrant |
 | Keyword retrieval | BM25 |
-| Embeddings | BAAI/bge-large-en-v1.5 |
+| Embeddings | BAAI/bge-small-en-v1.5 |
 | Reranking | Cohere |
 | LLM providers | Groq, OpenRouter / NVIDIA |
 | Web fallback | Tavily |
@@ -167,7 +167,7 @@ The main configuration is managed in `config.py`. These are the defaults current
 |---|---|---|
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | Supporting pipeline tasks |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Answer generation |
-| `EMBED_MODEL` | `BAAI/bge-large-en-v1.5` | Local embedding model |
+| `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local 384-dimensional embedding model |
 | `COHERE_RERANK` | `rerank-english-v3.0` | Reranking |
 | `VECTOR_TOP_K` | `15` | Vector retrieval candidates |
 | `BM25_TOP_K` | `10` | BM25 retrieval candidates |
