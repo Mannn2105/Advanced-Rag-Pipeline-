@@ -394,6 +394,19 @@ def ingest():
         show_progress=True
     )
 
+    # Write the index manifest only after the vector index is fully built.
+    # Docker uses this to detect stale/incomplete indexes after model changes.
+    manifest_path = os.path.join(config.QDRANT_DIR, "embedding_config.json")
+    manifest_tmp = manifest_path + ".tmp"
+    with open(manifest_tmp, "w", encoding="utf-8") as manifest_file:
+        json.dump(
+            {"model": config.EMBED_MODEL, "dimension": config.EMBED_DIMENSION},
+            manifest_file,
+            indent=2,
+        )
+    os.replace(manifest_tmp, manifest_path)
+    console.print(f"[green][INDEX][/green] Saved embedding manifest: {manifest_path}")
+
     elapsed = round(time.time() - start, 1)
     console.print(f"\n[bold green]✅ Ingestion complete in {elapsed}s![/bold green]")
     console.print(f"   • Documents:  [white]{len(doc_files)}[/white]")
