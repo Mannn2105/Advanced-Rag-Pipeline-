@@ -225,7 +225,11 @@ def ingest():
 
     # ── Load embedding model ──────────────────────────────────
     console.print(f"\n[cyan][EMBED][/cyan] Loading {config.EMBED_MODEL} onto CPU...")
-    embed_model = HuggingFaceEmbedding(model_name=config.EMBED_MODEL, device="cpu")
+    embed_model = HuggingFaceEmbedding(
+        model_name=config.EMBED_MODEL,
+        device="cpu",
+        embed_batch_size=config.EMBED_BATCH_SIZE,
+    )
     Settings.embed_model = embed_model
     console.print("[green][EMBED][/green] Embedding model ready ✓")
 
@@ -375,7 +379,7 @@ def ingest():
 
     qdrant_client.create_collection(
         collection_name=config.COLLECTION_NAME,
-        vectors_config=VectorParams(size=1024, distance=Distance.COSINE)
+        vectors_config=VectorParams(size=config.EMBED_DIMENSION, distance=Distance.COSINE)
     )
 
     vector_store = QdrantVectorStore(
