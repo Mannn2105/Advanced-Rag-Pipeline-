@@ -69,6 +69,7 @@ For a component-by-component explanation, see [Architecture Notes](project_docs/
 ```text
 .
 ├── project_docs/        # Architecture and evaluation documentation
+├── .env.example         # Placeholder environment configuration
 ├── docs/                # Documents supplied for ingestion at runtime
 ├── config.py            # Model, retrieval and application configuration
 ├── ingest.py            # Document parsing, enrichment and indexing
