@@ -61,3 +61,7 @@ Do not tune and report on the same small question set as if it were an unbiased 
 - Macro averages weight each query equally.
 - Retrieval scores do not establish that generated answers are correct or grounded.
 - Never invent benchmark results. Publish measured reports together with their dataset and configuration provenance.
+
+## End-to-end demo checks
+
+For a separate set of ten questions grounded in the repository's four demo documents, see [`rag_smoke_questions.jsonl`](rag_smoke_questions.jsonl) and the [smoke-test runbook](SMOKE_TESTS.md). These checks validate the hosted ingestion, retrieval, and answer flow manually; they are not retrieval-metric benchmark data and should not be mixed with `sample_dataset.jsonl`.
