@@ -58,3 +58,12 @@ The `/api/status` route reports the model-loading flag and indexed chunk count. 
 Treat the service as a development/demo environment until the checklist is addressed. Do not describe the public endpoint as production-secure or production-ready based only on the page loading.
 
 This review is a prioritized engineering checklist, not legal, compliance, or penetration-test advice.
+
+
+## Implemented access gate (single shared account)
+
+The application now has a server-side HTTP Basic authentication gate for the landing page, chat UI, and API routes. The public `/api/status` endpoint remains available for a basic readiness check. The gate reads `APP_USERNAME` and `APP_PASSWORD` from environment variables; if either is missing, protected routes fail closed with HTTP 503. Credentials are checked on the server and are not embedded in browser JavaScript.
+
+For Railway, set both variables in the service's Variables panel using long, unique values. Use the app only over its HTTPS Railway domain. The browser should prompt for credentials when opening the protected page. Do not put these values in source control, chat, or frontend code.
+
+**Scope limitation:** this is a single shared login, not individual user accounts. It does not provide per-user conversation ownership or isolation, and the current JSON conversation store remains shared by anyone with the shared login. It is a basic access barrier for a private demo, not a production multi-tenant security architecture. Keep the service private and do not put sensitive documents into it until owner-scoped storage, stronger identity management, rate limiting, and operational controls are implemented.
