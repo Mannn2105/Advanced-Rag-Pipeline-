@@ -61,7 +61,7 @@ flowchart TD
     L --> M[Stream response with sources]
 ```
 
-For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md).
+For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md). Before exposing the API publicly, review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md).
 
 ## Repository Structure
 
