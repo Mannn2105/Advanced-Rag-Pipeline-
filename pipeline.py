@@ -42,7 +42,11 @@ def log(step: str, msg: str, color: str = "cyan"):
 # ── Model Initialisation ──────────────────────────────────────
 def init_models():
     log("INIT", "Loading embedding model onto CPU...", "yellow")
-    embed_model = HuggingFaceEmbedding(model_name=config.EMBED_MODEL, device="cpu")
+    embed_model = HuggingFaceEmbedding(
+        model_name=config.EMBED_MODEL,
+        device="cpu",
+        embed_batch_size=config.EMBED_BATCH_SIZE,
+    )
 
     log("INIT", "Loading cross-encoder compression model (22MB)...", "yellow")
     _get_cross_encoder()  # pre-warm — avoids delay on first query
