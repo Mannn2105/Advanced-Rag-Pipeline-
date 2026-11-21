@@ -21,4 +21,4 @@ RUN python -m pip install --upgrade pip && \
 COPY . .
 
 EXPOSE 8000
-CMD ["sh", "-c", "if [ ! -f /app/qdrant_db/nodes.pkl ]; then python ingest.py; fi; uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "if ! python -c 'import json,pathlib,config,sys; p=pathlib.Path(config.QDRANT_DIR)/\"embedding_config.json\"; expected={\"model\":config.EMBED_MODEL,\"dimension\":config.EMBED_DIMENSION}; sys.exit(0 if p.exists() and json.loads(p.read_text())==expected else 1)'; then python ingest.py; fi; uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]

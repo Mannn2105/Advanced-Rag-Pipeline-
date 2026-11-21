@@ -17,6 +17,8 @@ os.environ["TRANSFORMERS_NO_TF"] = "1"
 # ============================================================
 
 import json
+import base64
+import hmac
 import uuid
 import time
 import pickle
@@ -27,6 +29,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, Request
+from auth import basic_auth_valid
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -50,6 +53,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Single-user access gate ───────────────────────────────────
+# Set APP_USERNAME and APP_PASSWORD in the deployment environment.
+# HTTP Basic is used so the browser can prompt without putting a shared
+# secret in frontend JavaScript. Always serve this app over HTTPS.
+@app.middleware("http")
+async def require_basic_auth(request: Request, call_next):
+    if request.url.path == "/api/status":
+        return await call_next(request)
+
+    expected_user = os.getenv("APP_USERNAME", "")
+    expected_password = os.getenv("APP_PASSWORD", "")
+    if not expected_user or not expected_password:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Application access is not configured."},
+        )
+
+    valid = basic_auth_valid(
+        request.headers.get("authorization", ""),
+        expected_user,
+        expected_password,
+    )
+    if not valid:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Authentication required."},
+            headers={"WWW-Authenticate": 'Basic realm="RAG Hub"'},
+        )
+    return await call_next(request)
 
 # ── Global State ──────────────────────────────────────────────
 MODELS_LOADED = False

@@ -1,0 +1,3 @@
+{"query_id":"sample-001","question":"Which component stores vector embeddings?","relevant_doc_ids":["architecture-vector-store"],"retrieved_doc_ids":["architecture-vector-store","architecture-api","deployment-notes"]}
+{"query_id":"sample-002","question":"How are keyword results combined with vector results?","relevant_doc_ids":["retrieval-fusion"],"retrieved_doc_ids":["retrieval-fusion","architecture-vector-store","reranking-notes"]}
+{"query_id":"sample-003","question":"What should happen when retrieved context is insufficient?","relevant_doc_ids":["grounding-policy","fallback-design"],"retrieved_doc_ids":["fallback-design","grounding-policy","architecture-api"]}

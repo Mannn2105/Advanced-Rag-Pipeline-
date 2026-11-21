@@ -7,7 +7,6 @@ The project explores how hybrid search, query expansion, reranking, context filt
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square)
 ![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.10.68-purple?style=flat-square)
-![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
 ## Project Highlights
 
@@ -30,7 +29,7 @@ The project explores how hybrid search, query expansion, reranking, context filt
 | RAG orchestration | LlamaIndex |
 | Vector database | Qdrant |
 | Keyword retrieval | BM25 |
-| Embeddings | BAAI/bge-large-en-v1.5 |
+| Embeddings | BAAI/bge-small-en-v1.5 |
 | Reranking | Cohere |
 | LLM providers | Groq, OpenRouter / NVIDIA |
 | Web fallback | Tavily |
@@ -62,13 +61,14 @@ flowchart TD
     L --> M[Stream response with sources]
 ```
 
-For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md).
+For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md). Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md) before exposing the API publicly.
 
 ## Repository Structure
 
 ```text
 .
-├── project_docs/        # Architecture and evaluation documentation
+├── project_docs/        # Architecture, provenance and evaluation documentation
+├── evaluation/          # Independent retrieval metrics, sample data and unit tests
 ├── .env.example         # Placeholder environment configuration
 ├── docs/                # Documents supplied for ingestion at runtime
 ├── config.py            # Model, retrieval and application configuration
@@ -167,7 +167,7 @@ The main configuration is managed in `config.py`. These are the defaults current
 |---|---|---|
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | Supporting pipeline tasks |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Answer generation |
-| `EMBED_MODEL` | `BAAI/bge-large-en-v1.5` | Local embedding model |
+| `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local 384-dimensional embedding model |
 | `COHERE_RERANK` | `rerank-english-v3.0` | Reranking |
 | `VECTOR_TOP_K` | `15` | Vector retrieval candidates |
 | `BM25_TOP_K` | `10` | BM25 retrieval candidates |
@@ -192,7 +192,7 @@ python tests.py --group R
 python tests.py --test R-01
 ```
 
-The test runner queries the configured pipeline and therefore requires the local index, documents, and relevant provider credentials to be set up. A successful run has not been claimed as part of this repository documentation update.
+The test runner queries the configured pipeline and therefore requires the local index, documents, and relevant provider credentials to be set up. A successful run has not been claimed as part of this repository documentation update. The independent retrieval-metrics utility does not need provider credentials; see [Evaluation tooling](evaluation/README.md).
 
 See [Evaluation Guide](project_docs/EVALUATION.md) for a reproducible comparison plan, metric definitions, and a results template. Do not present the historical 35–49% contextual-retrieval figure as a benchmark measured by this project: it is a research-reported result, not independently verified here.
 
@@ -213,9 +213,9 @@ See [Evaluation Guide](project_docs/EVALUATION.md) for a reproducible comparison
 - Exposing an AI workflow through FastAPI and a streaming web interface.
 - Designing regression questions and evaluating retrieval quality.
 
-## License
+## License status
 
-The repository is marked as MIT licensed. See the repository's `LICENSE` file for the license text.
+This repository currently has no `LICENSE` file. Do not assume the code is MIT-licensed or grant reuse rights until the project owner has selected and added an appropriate license. The reference repository reviewed during the project audit also has no declared license; obtain permission before reusing its code.
 
 ---
 

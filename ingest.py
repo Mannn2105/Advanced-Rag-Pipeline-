@@ -225,7 +225,11 @@ def ingest():
 
     # ── Load embedding model ──────────────────────────────────
     console.print(f"\n[cyan][EMBED][/cyan] Loading {config.EMBED_MODEL} onto CPU...")
-    embed_model = HuggingFaceEmbedding(model_name=config.EMBED_MODEL, device="cpu")
+    embed_model = HuggingFaceEmbedding(
+        model_name=config.EMBED_MODEL,
+        device="cpu",
+        embed_batch_size=config.EMBED_BATCH_SIZE,
+    )
     Settings.embed_model = embed_model
     console.print("[green][EMBED][/green] Embedding model ready ✓")
 
@@ -375,7 +379,7 @@ def ingest():
 
     qdrant_client.create_collection(
         collection_name=config.COLLECTION_NAME,
-        vectors_config=VectorParams(size=1024, distance=Distance.COSINE)
+        vectors_config=VectorParams(size=config.EMBED_DIMENSION, distance=Distance.COSINE)
     )
 
     vector_store = QdrantVectorStore(
@@ -389,6 +393,19 @@ def ingest():
         storage_context=storage_context,
         show_progress=True
     )
+
+    # Write the index manifest only after the vector index is fully built.
+    # Docker uses this to detect stale/incomplete indexes after model changes.
+    manifest_path = os.path.join(config.QDRANT_DIR, "embedding_config.json")
+    manifest_tmp = manifest_path + ".tmp"
+    with open(manifest_tmp, "w", encoding="utf-8") as manifest_file:
+        json.dump(
+            {"model": config.EMBED_MODEL, "dimension": config.EMBED_DIMENSION},
+            manifest_file,
+            indent=2,
+        )
+    os.replace(manifest_tmp, manifest_path)
+    console.print(f"[green][INDEX][/green] Saved embedding manifest: {manifest_path}")
 
     elapsed = round(time.time() - start, 1)
     console.print(f"\n[bold green]✅ Ingestion complete in {elapsed}s![/bold green]")

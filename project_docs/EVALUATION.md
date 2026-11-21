@@ -4,6 +4,10 @@
 
 Measure whether each retrieval stage improves evidence retrieval and answer quality on a fixed question set. Do not rely on a single anecdotal query or a project-reported percentage.
 
+## Independent retrieval metrics
+
+The `evaluation/` directory contains a dependency-free evaluator for labelled retrieval rankings. It reports Precision@k, Recall@k, MRR, and nDCG@k, with per-query scores and macro averages. Its sample dataset is synthetic and is not a benchmark of this application. See [`evaluation/README.md`](../evaluation/README.md) for the data format and commands. A GitHub Actions workflow runs its unit tests and sample smoke test on relevant pushes and pull requests.
+
 ## Existing evaluation runner
 
 The repository includes `tests.py`, a predefined question suite with expected keywords and grouped scenarios. It runs against the configured local index and model providers, so it is an integration-style evaluation rather than a fully isolated unit-test suite.
