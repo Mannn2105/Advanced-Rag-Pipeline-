@@ -67,7 +67,8 @@ For a component-by-component explanation, see [Architecture Notes](project_docs/
 
 ```text
 .
-├── project_docs/        # Architecture and evaluation documentation
+├── project_docs/        # Architecture, provenance and evaluation documentation
+├── evaluation/          # Independent retrieval metrics, sample data and unit tests
 ├── .env.example         # Placeholder environment configuration
 ├── docs/                # Documents supplied for ingestion at runtime
 ├── config.py            # Model, retrieval and application configuration
@@ -191,7 +192,7 @@ python tests.py --group R
 python tests.py --test R-01
 ```
 
-The test runner queries the configured pipeline and therefore requires the local index, documents, and relevant provider credentials to be set up. A successful run has not been claimed as part of this repository documentation update.
+The test runner queries the configured pipeline and therefore requires the local index, documents, and relevant provider credentials to be set up. A successful run has not been claimed as part of this repository documentation update. The independent retrieval-metrics utility does not need provider credentials; see [Evaluation tooling](evaluation/README.md).
 
 See [Evaluation Guide](project_docs/EVALUATION.md) for a reproducible comparison plan, metric definitions, and a results template. Do not present the historical 35–49% contextual-retrieval figure as a benchmark measured by this project: it is a research-reported result, not independently verified here.
 
