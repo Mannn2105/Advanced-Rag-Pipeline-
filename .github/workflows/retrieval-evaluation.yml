@@ -1,0 +1,39 @@
+name: Retrieval evaluation checks
+
+on:
+  push:
+    branches:
+      - main
+      - improvement/provenance-and-quality-review
+    paths:
+      - "evaluation/**"
+      - ".github/workflows/retrieval-evaluation.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "evaluation/**"
+      - ".github/workflows/retrieval-evaluation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-evaluation:
+    name: Unit tests and sample evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "false"
+
+      - name: Run evaluator unit tests
+        run: python -m unittest discover -s evaluation -p "test_*.py" -v
+
+      - name: Run sample dataset smoke test
+        run: python evaluation/retrieval_metrics.py evaluation/sample_dataset.jsonl --k 5
