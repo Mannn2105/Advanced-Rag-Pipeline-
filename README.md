@@ -4,6 +4,17 @@ A document question-answering project that combines multiple retrieval and reaso
 
 The project explores how hybrid search, query expansion, reranking, context filtering, and fallback retrieval work together in a multi-stage RAG workflow.
 
+## Hosted deployment
+
+- **API status:** [Check service readiness](https://rag-api-live-production.up.railway.app/api/status)
+- **Service:** Railway-hosted FastAPI application
+- **Embedding model:** `BAAI/bge-small-en-v1.5`
+- **Demo corpus:** Four included Markdown documents, indexed into 29 chunks
+- **Access:** The chat interface is protected with HTTP Basic Authentication. Credentials are stored in Railway environment variables and are not published in this repository.
+
+The hosted environment uses lightweight sentence-based chunking and skips optional contextual enrichment during initial indexing. The full chat workflow requires valid Groq, OpenRouter, and Cohere API credentials. Do not expose the chat interface publicly without authentication and appropriate rate limits.
+
+
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square)
 ![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.10.68-purple?style=flat-square)
