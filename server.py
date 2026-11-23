@@ -23,6 +23,7 @@ import uuid
 import time
 import pickle
 import asyncio
+import sys
 import aiofiles
 from pathlib import Path
 from datetime import datetime
@@ -112,21 +113,54 @@ def _save_history(data: dict):
 
 
 # ── Model Loading ─────────────────────────────────────────────
+MODEL_INIT_TASK: Optional[asyncio.Task] = None
+
+
+async def _initialize_models_and_index():
+    global MODELS_LOADED, embed_model, fast_llm, final_llm, index, nodes_store
+
+    nodes_path = Path(config.QDRANT_DIR) / "nodes.pkl"
+    manifest_path = Path(config.QDRANT_DIR) / "embedding_config.json"
+    expected_manifest = {
+        "model": config.EMBED_MODEL,
+        "dimension": config.EMBED_DIMENSION,
+    }
+
+    try:
+        print("\nStarting background model and index initialization...")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            manifest = None
+
+        # Build the index in the background when it is missing or was created
+        # with a different embedding model. The HTTP server remains responsive
+        # while the first-time ingestion runs, so platform health checks can pass.
+        if not nodes_path.is_file() or manifest != expected_manifest:
+            print("Index missing or outdated; running document ingestion...")
+            process = await asyncio.create_subprocess_exec(sys.executable, "ingest.py")
+            return_code = await process.wait()
+            if return_code != 0:
+                raise RuntimeError(f"Document ingestion exited with code {return_code}")
+
+        embed_model, fast_llm, final_llm = await asyncio.to_thread(init_models)
+        index = await asyncio.to_thread(load_index)
+
+        with nodes_path.open("rb") as f:
+            nodes_store = pickle.load(f)
+
+        MODELS_LOADED = True
+        print(f"Ready! Index loaded with {len(nodes_store)} chunks.")
+    except Exception as e:
+        MODELS_LOADED = False
+        print(f"Model/index initialization failed: {e}")
+
+
 @app.on_event("startup")
 async def startup_load_models():
-    global MODELS_LOADED, embed_model, fast_llm, final_llm, index, nodes_store
-    print("\n🧠 Loading models and index... (this may take a minute on first run)")
-    try:
-        embed_model, fast_llm, final_llm = init_models()
-        index = load_index()
-        nodes_path = os.path.join(config.QDRANT_DIR, "nodes.pkl")
-        with open(nodes_path, "rb") as f:
-            nodes_store = pickle.load(f)
-        MODELS_LOADED = True
-        print(f"✅ Ready! Index loaded with {len(nodes_store)} chunks.\n")
-    except Exception as e:
-        print(f"❌ Failed to load models: {e}")
-        print("   Make sure you've run 'python ingest.py' first.\n")
+    global MODEL_INIT_TASK
+    print("Starting API server; model and index initialization will continue in the background.")
+    MODEL_INIT_TASK = asyncio.create_task(_initialize_models_and_index())
 
 
 # ── Serve Frontend ────────────────────────────────────────────
