@@ -27,7 +27,7 @@ A Python-based document question-answering system that combines dense and sparse
 | RAG framework | LlamaIndex |
 | Vector database | Qdrant |
 | Keyword retrieval | BM25 |
-| Embeddings | BAAI/bge-large-en-v1.5 (configured in `config.py`) |
+| Embeddings | BAAI/bge-small-en-v1.5 (configured in `config.py`) |
 | Reranking | Cohere |
 | Cross-encoder | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | Model providers | Groq, OpenRouter |
@@ -164,7 +164,7 @@ The main settings are defined in `config.py`. Current defaults include:
 |---|---|---|
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | Supporting pipeline tasks |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Answer generation |
-| `EMBED_MODEL` | `BAAI/bge-large-en-v1.5` | Local embedding model |
+| `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local embedding model |
 | `COHERE_RERANK` | `rerank-english-v3.0` | Passage reranking |
 | `VECTOR_TOP_K` | `15` | Vector retrieval candidates |
 | `BM25_TOP_K` | `10` | BM25 retrieval candidates |
