@@ -76,22 +76,35 @@ def parse_with_fallback(doc_path: str, embed_model) -> list:
     reader = SimpleDirectoryReader(input_files=[doc_path])
     documents = reader.load_data()
 
-    # Semantic chunking
-    try:
-        splitter = SemanticSplitterNodeParser(
-            buffer_size=1,
-            breakpoint_percentile_threshold=95,
-            embed_model=embed_model,
-            include_metadata=True,
-            include_prev_next_rel=True
-        )
-        nodes = splitter.get_nodes_from_documents(documents, show_progress=False)
-    except Exception:
+    # Semantic chunking is useful for richer document boundaries, but it is
+    # CPU-intensive on small hosted instances. Allow deployments to select the
+    # deterministic sentence splitter for faster first-time indexing.
+    use_simple_chunking = os.getenv("RAG_SIMPLE_CHUNKING", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+    if use_simple_chunking:
         splitter = SentenceSplitter(
             chunk_size=config.CHUNK_SIZE,
             chunk_overlap=config.CHUNK_OVERLAP
         )
         nodes = splitter.get_nodes_from_documents(documents)
+    else:
+        try:
+            splitter = SemanticSplitterNodeParser(
+                buffer_size=1,
+                breakpoint_percentile_threshold=95,
+                embed_model=embed_model,
+                include_metadata=True,
+                include_prev_next_rel=True
+            )
+            nodes = splitter.get_nodes_from_documents(documents, show_progress=False)
+        except Exception:
+            splitter = SentenceSplitter(
+                chunk_size=config.CHUNK_SIZE,
+                chunk_overlap=config.CHUNK_OVERLAP
+            )
+            nodes = splitter.get_nodes_from_documents(documents)
 
     # Structural anchor injection — extract end-of-doc structural blocks
     anchor_patterns = [
