@@ -248,7 +248,12 @@ def ingest():
 
     # ── PASS 1: Parse all documents ───────────────────────────
     use_docling = _docling_available()
-    parser_name = "Docling (structure-aware)" if use_docling else "SemanticSplitter (fallback)"
+    simple_chunking = os.getenv("RAG_SIMPLE_CHUNKING", "").strip().lower() in {"1", "true", "yes", "on"}
+    parser_name = (
+        "Docling (structure-aware)" if use_docling
+        else "SentenceSplitter (hosted fast mode)" if simple_chunking
+        else "SemanticSplitter (fallback)"
+    )
     console.print(f"\n[cyan][PARSE][/cyan] Parser: {parser_name}")
 
     if not use_docling:
@@ -309,9 +314,14 @@ def ingest():
         "Progress saved — safe to Ctrl+C and resume.[/dim]"
     )
 
-    if config.GROQ_API_KEY == "your_groq_key_here":
-        console.print("[yellow][ENRICH] GROQ_API_KEY not set — skipping enrichment.[/yellow]")
-        console.print("[yellow]Add your key to config.py and re-run to get the 35-49% accuracy boost.[/yellow]")
+    skip_enrichment = os.getenv("RAG_SKIP_CONTEXTUAL_ENRICHMENT", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    enrichment_enabled = not skip_enrichment and config.GROQ_API_KEY != "your_groq_key_here"
+
+    if not enrichment_enabled:
+        reason = "disabled for this deployment" if skip_enrichment else "GROQ_API_KEY not configured"
+        console.print(f"[yellow][ENRICH] Contextual enrichment skipped: {reason}.[/yellow]")
         enriched_nodes = all_nodes
     else:
         groq_client = Groq(model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY)
@@ -425,7 +435,7 @@ def ingest():
     console.print(f"   • Documents:  [white]{len(doc_files)}[/white]")
     console.print(f"   • Chunks:     [white]{len(enriched_nodes)}[/white]")
     console.print(f"   • Parser:     [white]{parser_name}[/white]")
-    console.print(f"   • Enriched:   [white]{'Yes' if config.GROQ_API_KEY != 'your_groq_key_here' else 'No (add GROQ_API_KEY)'}[/white]")
+    console.print(f"   • Enriched:   [white]{'Yes' if enrichment_enabled else 'No (disabled or missing GROQ_API_KEY)'}[/white]")
     console.print(f"   • Stored in:  [white]{config.QDRANT_DIR}/[/white]")
     console.print("\n[bold cyan]Now run:[/bold cyan] python query.py")
 
