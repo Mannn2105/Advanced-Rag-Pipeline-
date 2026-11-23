@@ -17,7 +17,7 @@ GROQ_MODEL     = "llama-3.1-8b-instant"   # fast, free — for HyDE/CRAG/critiqu
 OPENROUTER_MODEL ="nvidia/nemotron-3-super-120b-a12b:free"
 EMBED_MODEL    = "BAAI/bge-small-en-v1.5"  # lightweight 384-dim CPU embeddings
 EMBED_DIMENSION = 384
-EMBED_BATCH_SIZE = 4  # lower peak RAM during parsing and indexing
+EMBED_BATCH_SIZE = int(os.getenv('EMBED_BATCH_SIZE', '2'))  # configurable for low-memory deployments
 COHERE_RERANK  = "rerank-english-v3.0"     # best free reranker
 CROSS_ENCODER_MODEL  = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # sentence scoring (22MB)
 
