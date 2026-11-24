@@ -60,3 +60,19 @@ def validate_runtime() -> list[str]:
     if not COLLECTION_NAME.strip():
         problems.append("COLLECTION_NAME cannot be empty")
     return problems
+
+
+def manifest_matches(manifest: dict | None) -> bool:
+    """Return whether a persisted index matches the active embedding setup.
+
+    Ingestion records additional metadata such as chunk counts and chunking
+    parameters. Those fields must not make a compatible index appear stale.
+    """
+    if not isinstance(manifest, dict):
+        return False
+    expected = {
+        "model": EMBED_MODEL,
+        "dimension": EMBED_DIMENSION,
+        "collection": COLLECTION_NAME,
+    }
+    return all(manifest.get(key) == value for key, value in expected.items())
