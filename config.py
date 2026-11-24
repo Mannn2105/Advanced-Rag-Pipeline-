@@ -53,4 +53,4 @@ ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_raw.split(',') 
 # ── Paths ────────────────────────────────────────────────────
 DOCS_DIR        = "./docs"
 QDRANT_DIR      = "./qdrant_db"       # local file-based, no server needed
-COLLECTION_NAME = "rag_collection"
+COLLECTION_NAME = "rag_collection_v2"  # non-destructive 384-d migration; keep the old collection for rollback
