@@ -13,7 +13,7 @@ COHERE_API_KEY = os.getenv('COHERE_API_KEY', 'your_cohere_key_here')     # https
 TAVILY_API_KEY = os.getenv('TAVILY_API_KEY', 'your_tavily_key_here')     # https://app.tavily.com
 
 # ── Model Selection ──────────────────────────────────────────
-GROQ_MODEL     = "llama-3.1-8b-instant"   # fast, free — for HyDE/CRAG/critique
+GROQ_MODEL     = "openai/gpt-oss-20b"   # current supported Groq model for HyDE/CRAG/critique
 OPENROUTER_MODEL ="nvidia/nemotron-3-super-120b-a12b:free"
 EMBED_MODEL    = "BAAI/bge-small-en-v1.5"  # lightweight 384-dim CPU embeddings
 EMBED_DIMENSION = 384
