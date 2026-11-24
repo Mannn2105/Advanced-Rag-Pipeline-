@@ -138,7 +138,7 @@ async def _initialize_models_and_index():
         # Build the index in the background when it is missing or was created
         # with a different embedding model. The HTTP server remains responsive
         # while the first-time ingestion runs, so platform health checks can pass.
-        if not nodes_path.is_file() or manifest != expected_manifest:
+        if not nodes_path.is_file() or not config.manifest_matches(manifest):
             print("Index missing or outdated; running document ingestion...")
             process = await asyncio.create_subprocess_exec(sys.executable, "ingest.py")
             return_code = await process.wait()
