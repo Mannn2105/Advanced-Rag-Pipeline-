@@ -125,6 +125,7 @@ async def _initialize_models_and_index():
     expected_manifest = {
         "model": config.EMBED_MODEL,
         "dimension": config.EMBED_DIMENSION,
+        "collection": config.COLLECTION_NAME,
     }
 
     try:
