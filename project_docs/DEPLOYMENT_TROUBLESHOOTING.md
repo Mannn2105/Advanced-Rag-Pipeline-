@@ -21,7 +21,7 @@ The Docker startup command runs `python ingest.py` whenever `/app/qdrant_db/node
 ### Safe remediation paths
 
 1. **Increase the service memory allocation** enough to accommodate the configured embedding model and indexing workload. Confirm the resulting cost/plan impact before applying the change. Then redeploy and verify that ingestion reaches the index-save and completion logs.
-2. **Use a smaller embedding model** as a deliberate model migration. The selected configuration is `BAAI/bge-small-en-v1.5`, 384 dimensions, with embedding batches of four. The ingestion and query paths must use the same model and batch configuration. Rebuild the vector collection; never mix vectors from different models or dimensions.
+2. **Use a smaller embedding model** as a deliberate model migration. The selected configuration is `BAAI/bge-small-en-v1.5`, 384 dimensions, with a configurable embedding batch size (default 2). The ingestion and query paths must use the same model and batch configuration. Rebuild the vector collection; never mix vectors from different models or dimensions.
 3. Keep the health-check endpoint lightweight and verify that it reports `ready: true` only after model and index loading have completed.
 
 ### Data-safety cautions
