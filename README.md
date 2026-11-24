@@ -176,7 +176,7 @@ The main configuration is managed in `config.py`. These are the defaults current
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Supporting pipeline tasks |
+| `GROQ_MODEL` | `openai/gpt-oss-20b` | Supporting pipeline tasks |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Answer generation |
 | `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local 384-dimensional embedding model |
 | `COHERE_RERANK` | `rerank-english-v3.0` | Reranking |
