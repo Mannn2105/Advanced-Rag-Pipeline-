@@ -7,7 +7,7 @@
 During the 2026-11-21 Railway deployment of the demo corpus:
 
 - The container found four Markdown documents in `docs/`.
-- The configured embedding model loaded successfully: `BAAI/bge-large-en-v1.5`.
+- The configured embedding model loaded successfully: `BAAI/bge-small-en-v1.5`.
 - The fallback parser started, but no later parsing, indexing, or application-ready log appeared.
 - The Railway service remained in `DEPLOYING`, and the `/api/status` health check did not receive a successful response.
 - Railway metrics showed the service at its approximately 1 GB memory limit during the same period.
@@ -16,7 +16,7 @@ These observations make memory pressure during first-time ingestion the leading 
 
 ### Why this can happen
 
-The Docker startup command runs `python ingest.py` whenever `/app/qdrant_db/nodes.pkl` is absent, and starts Uvicorn only after ingestion exits successfully. Ingestion loads the embedding model and uses it in the semantic splitter. The original `bge-large-en-v1.5` model was relatively memory intensive for this service allocation. The project is switching to `BAAI/bge-small-en-v1.5` (384 dimensions) and a smaller embedding batch size to reduce peak RAM. The vector index must be rebuilt because its dimension changes from 1024 to 384.
+The Docker startup command runs `python ingest.py` whenever `/app/qdrant_db/nodes.pkl` is absent, and starts Uvicorn only after ingestion exits successfully. Ingestion loads the embedding model and uses it in the semantic splitter. The original `bge-large-en-v1.5` model was relatively memory intensive for this service allocation. The configured model is now `BAAI/bge-small-en-v1.5` (384 dimensions), with a smaller embedding batch size to reduce peak RAM. The vector index must be rebuilt when migrating from a 1024-dimensional index to 384 dimensions.
 
 ### Safe remediation paths
 
@@ -26,7 +26,7 @@ The Docker startup command runs `python ingest.py` whenever `/app/qdrant_db/node
 
 ### Non-destructive embedding migration
 
-The current migration uses a new Qdrant collection name, `rag_collection_v2`, rather than deleting the existing `rag_collection`. The new collection is built with the configured 384-dimensional embedding model. The previous collection remains available for rollback until the new index passes authenticated end-to-end smoke tests. The embedding manifest records the model, dimension, and collection name so startup can detect stale indexes.
+The configured collection is `rag_collection_v2`, separate from the older `rag_collection`. Ingestion currently replaces `rag_collection_v2` in place when rebuilding it; the older `rag_collection` remains available for rollback. Do not treat a repeated ingestion as non-destructive to the active v2 collection. The embedding manifest records the model, dimension, and collection name so startup can detect stale indexes.
 
 ### Data-safety cautions
 
