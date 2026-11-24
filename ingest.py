@@ -423,7 +423,11 @@ def ingest():
     manifest_tmp = manifest_path + ".tmp"
     with open(manifest_tmp, "w", encoding="utf-8") as manifest_file:
         json.dump(
-            {"model": config.EMBED_MODEL, "dimension": config.EMBED_DIMENSION},
+            {
+                "model": config.EMBED_MODEL,
+                "dimension": config.EMBED_DIMENSION,
+                "collection": config.COLLECTION_NAME,
+            },
             manifest_file,
             indent=2,
         )
