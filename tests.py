@@ -72,6 +72,26 @@ class RetrievalUtilityTests(unittest.TestCase):
     def test_config_has_valid_chunk_dimensions(self):
         self.assertEqual(config.validate_runtime(), [])
 
+    def test_manifest_accepts_ingestion_metadata(self):
+        manifest = {
+            "model": config.EMBED_MODEL,
+            "dimension": config.EMBED_DIMENSION,
+            "collection": config.COLLECTION_NAME,
+            "chunk_size": config.CHUNK_SIZE,
+            "chunk_overlap": config.CHUNK_OVERLAP,
+            "node_count": 29,
+        }
+        self.assertTrue(config.manifest_matches(manifest))
+
+    def test_manifest_rejects_incompatible_embedding_setup(self):
+        manifest = {
+            "model": config.EMBED_MODEL,
+            "dimension": config.EMBED_DIMENSION + 1,
+            "collection": config.COLLECTION_NAME,
+            "node_count": 29,
+        }
+        self.assertFalse(config.manifest_matches(manifest))
+
 class AnswerScoringTests(unittest.TestCase):
     def test_score_requires_expected_indicators(self):
         score, _ = auto_score("Power use is 0.8 W.", {"keywords_pass": ["0.8"], "keywords_fail": []})
