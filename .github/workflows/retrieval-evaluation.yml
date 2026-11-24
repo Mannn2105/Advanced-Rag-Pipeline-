@@ -10,12 +10,25 @@ on:
       - "tests/**"
       - "auth.py"
       - "server.py"
+      - "config.py"
+      - "ingest.py"
+      - "pipeline.py"
+      - "requirements.txt"
+      - "Dockerfile"
       - ".github/workflows/retrieval-evaluation.yml"
   pull_request:
     branches:
       - main
     paths:
       - "evaluation/**"
+      - "tests/**"
+      - "auth.py"
+      - "server.py"
+      - "config.py"
+      - "ingest.py"
+      - "pipeline.py"
+      - "requirements.txt"
+      - "Dockerfile"
       - ".github/workflows/retrieval-evaluation.yml"
 
 permissions:
