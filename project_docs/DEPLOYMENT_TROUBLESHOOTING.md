@@ -24,6 +24,10 @@ The Docker startup command runs `python ingest.py` whenever `/app/qdrant_db/node
 2. **Use a smaller embedding model** as a deliberate model migration. The selected configuration is `BAAI/bge-small-en-v1.5`, 384 dimensions, with a configurable embedding batch size (default 2). The ingestion and query paths must use the same model and batch configuration. Rebuild the vector collection; never mix vectors from different models or dimensions.
 3. Keep the health-check endpoint lightweight and verify that it reports `ready: true` only after model and index loading have completed.
 
+### Non-destructive embedding migration
+
+The current migration uses a new Qdrant collection name, `rag_collection_v2`, rather than deleting the existing `rag_collection`. The new collection is built with the configured 384-dimensional embedding model. The previous collection remains available for rollback until the new index passes authenticated end-to-end smoke tests. The embedding manifest records the model, dimension, and collection name so startup can detect stale indexes.
+
 ### Data-safety cautions
 
 - Do not delete or reformat the persistent `/app/qdrant_db` volume as a troubleshooting shortcut.
