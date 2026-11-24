@@ -1,448 +1,188 @@
-# TF guard — stops broken TensorFlow DLL on Windows
+"""Document ingestion for the Advanced RAG Pipeline.
+
+Supported input types are PDF, DOCX, TXT, Markdown and CSV. The process writes
+a node catalogue, a versioned Qdrant collection and a manifest. Index files
+are built in a new collection before the manifest is atomically replaced.
+"""
 import os
-os.environ["USE_TF"] = "0"
-os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
-# ============================================================
-#  ingest.py — Production-Grade Two-Pass Ingestion Pipeline
-#
-#  PASS 1: Docling Parsing
-#    Converts any document (PDF, DOCX, TXT, MD) into a
-#    structure-aware model: tables, headings, sections,
-#    signature blocks all become distinct elements.
-#    Falls back to SimpleDirectoryReader if Docling unavailable.
-#
-#  PASS 2: Contextual Enrichment (Anthropic Contextual Retrieval)
-#    For every chunk, prepend a short LLM-generated context
-#    that situates it within the whole document.
-#    Based on Anthropic research — reduces retrieval failures 35-49%.
-#    Uses Groq free tier with rate-limit safety (backoff + resume).
-#
-#  OUTPUT: Qdrant vector store + nodes.pkl for BM25
-# ============================================================
-
-import sys
-import time
+import hashlib
 import json
 import pickle
-import hashlib
-import importlib.util
+import re
+import time
 from pathlib import Path
-
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
 import config
 
-console = Console()
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".csv"}
 
-
-# ── Docling availability check ────────────────────────────────
-def _docling_available() -> bool:
-    return importlib.util.find_spec("docling") is not None
-
-
-# ── PASS 1A: Parse with Docling (structure-aware) ─────────────
-def parse_with_docling(doc_path: str) -> list:
-    """
-    Parse a document using Docling's layout-aware engine.
-    Returns LlamaIndex TextNodes with rich structural metadata.
-    Tables, headings, signature blocks — all preserved as distinct elements.
-    """
-    from llama_index.readers.docling import DoclingReader
-    from llama_index.node_parser.docling import DoclingNodeParser
-
-    reader = DoclingReader(export_type=DoclingReader.ExportType.JSON)
-    docs = reader.load_data(file_path=doc_path)
-
-    node_parser = DoclingNodeParser()
-    nodes = node_parser.get_nodes_from_documents(documents=docs)
-    return nodes
-
-
-# ── PASS 1B: Fallback parser (plain text, structure-aware chunking) ──
-def parse_with_fallback(doc_path: str, embed_model) -> list:
-    """
-    Fallback when Docling isn't installed.
-    Uses SemanticSplitter with a post-pass that extracts structural
-    anchors (signature blocks, tables, etc.) as standalone nodes.
-    """
-    import re
+def _extract_document(path: Path):
     from llama_index.core import SimpleDirectoryReader
-    from llama_index.core.node_parser import SemanticSplitterNodeParser, SentenceSplitter
-    from llama_index.core.schema import TextNode
+    reader = SimpleDirectoryReader(input_files=[str(path)], filename_as_id=True)
+    return reader.load_data()
 
-    # Load single file
-    reader = SimpleDirectoryReader(input_files=[doc_path])
-    documents = reader.load_data()
-
-    # Semantic chunking is useful for richer document boundaries, but it is
-    # CPU-intensive on small hosted instances. Allow deployments to select the
-    # deterministic sentence splitter for faster first-time indexing.
-    use_simple_chunking = os.getenv("RAG_SIMPLE_CHUNKING", "").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
-
-    if use_simple_chunking:
-        splitter = SentenceSplitter(
-            chunk_size=config.CHUNK_SIZE,
-            chunk_overlap=config.CHUNK_OVERLAP
-        )
-        nodes = splitter.get_nodes_from_documents(documents)
-    else:
-        try:
-            splitter = SemanticSplitterNodeParser(
-                buffer_size=1,
-                breakpoint_percentile_threshold=95,
-                embed_model=embed_model,
-                include_metadata=True,
-                include_prev_next_rel=True
-            )
-            nodes = splitter.get_nodes_from_documents(documents, show_progress=False)
-        except Exception:
-            splitter = SentenceSplitter(
-                chunk_size=config.CHUNK_SIZE,
-                chunk_overlap=config.CHUNK_OVERLAP
-            )
-            nodes = splitter.get_nodes_from_documents(documents)
-
-    # Structural anchor injection — extract end-of-doc structural blocks
-    anchor_patterns = [
-        r'SIGNATURES?\s*:',
-        r'SIGNED\s+BY\s*:',
-        r'EXECUTED\s+BY\s*:',
-        r'CONCLUSION\s*[\n:]',
-        r'SUMMARY\s*[\n:]',
-        r'ABSTRACT\s*[\n:]',
-    ]
-    for doc in documents:
-        for pattern in anchor_patterns:
-            match = re.search(pattern, doc.text, re.IGNORECASE)
-            if match:
-                anchor_text = doc.text[match.start():].strip()
-                if len(anchor_text) > 30:
-                    anchor_node = TextNode(
-                        text=anchor_text,
-                        metadata={
-                            **doc.metadata,
-                            "chunk_type": "structural_anchor",
-                            "injected": True,
-                        }
-                    )
-                    nodes.append(anchor_node)
-
+def _chunk_documents(documents: list):
+    from llama_index.core.node_parser import SentenceSplitter
+    parser = SentenceSplitter(
+        chunk_size=config.CHUNK_SIZE,
+        chunk_overlap=config.CHUNK_OVERLAP,
+        include_metadata=True,
+        include_prev_next_rel=True,
+    )
+    nodes = parser.get_nodes_from_documents(documents)
+    for node in nodes:
+        metadata = node.metadata or {}
+        metadata.setdefault("file_name", metadata.get("file_path", "unknown").split("/")[-1])
+        node.metadata = metadata
     return nodes
 
-
-# ── PASS 2: Contextual Enrichment (Anthropic Contextual Retrieval) ──
-def enrich_chunk_with_context(
-    chunk_text: str,
-    full_document: str,
-    groq_client,
-    retries: int = 3
-) -> str:
-    """
-    Prepend a short LLM-generated context to each chunk.
-    This is Anthropic's Contextual Retrieval technique:
-    https://www.anthropic.com/news/contextual-retrieval
-
-    The context situates the chunk within the whole document,
-    making it retrievable even when the chunk text alone is
-    ambiguous (e.g. a signature block, a bullet list item,
-    a table row without headers).
-
-    Uses Groq free tier with exponential backoff on 429s.
-    """
+def _contextualize(node_text: str, source_text: str, llm) -> str:
     prompt = (
-        "<document>\n"
-        f"{full_document[:8000]}\n"  # cap at 8k chars to stay within token limits
-        "</document>\n\n"
-        "Here is a chunk from the document:\n"
-        "<chunk>\n"
-        f"{chunk_text}\n"
-        "</chunk>\n\n"
-        "Give a short (2-3 sentence) context that situates this chunk "
-        "within the overall document, to improve search retrieval. "
-        "Include: document type, relevant section/article, key entities "
-        "(company names, people, dates if present in chunk). "
-        "Be specific and factual. Answer only with the context, nothing else."
+        "Write one short factual sentence that identifies the topic and location "
+        "of this excerpt within the supplied document. Do not add facts not present "
+        "in the excerpt. Return only that sentence.\n\n"
+        f"Document overview:\n{source_text[:5000]}\n\nExcerpt:\n{node_text[:2500]}"
     )
+    return llm.complete(prompt).text.strip()
 
-    for attempt in range(retries):
+def enrich_nodes(nodes: list, documents_by_name: dict, llm=None) -> list:
+    """Optionally prepend concise context; a failed enrichment never loses source text."""
+    if llm is None:
+        return nodes
+    cache_path = Path(config.QDRANT_DIR) / "enrichment_cache.json"
+    try:
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cache = {}
+    changed = False
+    for node in nodes:
+        original = node.text
+        digest = hashlib.sha256(original.encode("utf-8")).hexdigest()
+        if digest in cache:
+            node.text = cache[digest]
+            continue
+        source_name = node.metadata.get("file_name", "")
+        overview = documents_by_name.get(source_name, original)
         try:
-            response = groq_client.complete(prompt)
-            context = response.text.strip()
-            # Prepend context to chunk — this is what gets embedded
-            return f"{context}\n\n{chunk_text}"
-        except Exception as e:
-            err = str(e).lower()
-            if "429" in err or "rate" in err:
-                wait = (2 ** attempt) * 2  # 2s, 4s, 8s
-                console.print(f"[yellow][ENRICH] Rate limited — waiting {wait}s...[/yellow]")
-                time.sleep(wait)
-            else:
-                console.print(f"[yellow][ENRICH] Error: {e} — using chunk without context[/yellow]")
-                return chunk_text  # return unenriched on non-rate-limit errors
+            prefix = _contextualize(original, overview, llm)
+            node.text = f"{prefix}\n\n{original}" if prefix else original
+        except Exception:
+            node.text = original
+        cache[digest] = node.text
+        changed = True
+        if changed:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temp = cache_path.with_suffix(".tmp")
+            temp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+            os.replace(temp, cache_path)
+            time.sleep(max(0.0, config.ENRICH_DELAY_SECONDS))
+    return nodes
 
-    console.print("[yellow][ENRICH] Max retries reached — using chunk without context[/yellow]")
-    return chunk_text
-
-
-# ── Resume cache: skip already-enriched chunks ────────────────
-def _chunk_hash(text: str) -> str:
-    return hashlib.md5(text.encode()).hexdigest()[:12]
-
-
-def load_enrich_cache(cache_path: str) -> dict:
-    if os.path.exists(cache_path):
-        with open(cache_path, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_enrich_cache(cache: dict, cache_path: str):
-    with open(cache_path, "w") as f:
-        json.dump(cache, f)
-
-
-# ── Main ingestion ─────────────────────────────────────────────
-def ingest():
-    from llama_index.core import VectorStoreIndex, StorageContext, Settings
+def build_index(nodes: list) -> None:
+    from llama_index.core import StorageContext, VectorStoreIndex, Settings
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-    from llama_index.llms.groq import Groq
     from llama_index.vector_stores.qdrant import QdrantVectorStore
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, VectorParams
 
-    start = time.time()
-
-    # ── Check docs folder ─────────────────────────────────────
-    if not os.path.exists(config.DOCS_DIR):
-        os.makedirs(config.DOCS_DIR)
-        console.print(f"[yellow]Created {config.DOCS_DIR}/ — add documents, then re-run.[/yellow]")
-        sys.exit(0)
-
-    doc_files = [
-        f for f in Path(config.DOCS_DIR).iterdir()
-        if f.is_file() and not f.name.startswith(".")
-        and f.suffix.lower() in {".pdf", ".txt", ".md", ".docx", ".csv"}
-    ]
-
-    if not doc_files:
-        console.print(f"[red]No documents found in {config.DOCS_DIR}/[/red]")
-        sys.exit(0)
-
-    console.print(f"\n[bold green]Found {len(doc_files)} document(s):[/bold green]")
-    for f in doc_files:
-        console.print(f"  • {f.name}")
-
-    # ── Load embedding model ──────────────────────────────────
-    console.print(f"\n[cyan][EMBED][/cyan] Loading {config.EMBED_MODEL} onto CPU...")
-    embed_model = HuggingFaceEmbedding(
+    if not nodes:
+        raise ValueError("No chunks were produced; refusing to create an empty index")
+    embedding = HuggingFaceEmbedding(
         model_name=config.EMBED_MODEL,
         device="cpu",
         embed_batch_size=config.EMBED_BATCH_SIZE,
     )
-    Settings.embed_model = embed_model
-    console.print("[green][EMBED][/green] Embedding model ready ✓")
-
-    # ── PASS 1: Parse all documents ───────────────────────────
-    use_docling = _docling_available()
-    simple_chunking = os.getenv("RAG_SIMPLE_CHUNKING", "").strip().lower() in {"1", "true", "yes", "on"}
-    parser_name = (
-        "Docling (structure-aware)" if use_docling
-        else "SentenceSplitter (hosted fast mode)" if simple_chunking
-        else "SemanticSplitter (fallback)"
-    )
-    console.print(f"\n[cyan][PARSE][/cyan] Parser: {parser_name}")
-
-    if not use_docling:
-        console.print(
-            "[dim]Tip: pip install docling llama-index-readers-docling "
-            "llama-index-node-parser-docling for better table/structure parsing[/dim]"
+    Settings.embed_model = embedding
+    dimension = len(embedding.get_text_embedding("dimension validation"))
+    if dimension != config.EMBED_DIMENSION:
+        raise RuntimeError(
+            f"Configured dimension {config.EMBED_DIMENSION} does not match model output {dimension}"
         )
 
-    all_nodes = []
-    all_documents_text = {}  # filename → full text (for contextual enrichment)
-
-    with Progress(
-        SpinnerColumn(), TextColumn("{task.description}"),
-        BarColumn(), TimeElapsedColumn(), console=console
-    ) as progress:
-        task = progress.add_task("[cyan]Parsing documents...", total=len(doc_files))
-
-        for doc_path in doc_files:
-            progress.update(task, description=f"[cyan]Parsing {doc_path.name}...")
-            try:
-                if use_docling:
-                    nodes = parse_with_docling(str(doc_path))
-                else:
-                    nodes = parse_with_fallback(str(doc_path), embed_model)
-
-                # Store full document text for contextual enrichment
-                with open(doc_path, "r", encoding="utf-8", errors="ignore") as f:
-                    all_documents_text[doc_path.name] = f.read()
-
-                # Tag nodes with source file
-                for node in nodes:
-                    if "file_name" not in node.metadata:
-                        node.metadata["file_name"] = doc_path.name
-
-                all_nodes.extend(nodes)
-                progress.advance(task)
-                console.print(f"[green][PARSE][/green] {doc_path.name} → {len(nodes)} chunks ✓")
-
-            except Exception as e:
-                console.print(f"[red][PARSE][/red] Failed on {doc_path.name}: {e}")
-                console.print("[yellow]Falling back to plain text loading...[/yellow]")
-                nodes = parse_with_fallback(str(doc_path), embed_model)
-                all_nodes.extend(nodes)
-                progress.advance(task)
-
-    console.print(f"\n[green][PARSE][/green] Total chunks after parsing: {len(all_nodes)} ✓")
-
-    # ── PASS 2: Contextual Enrichment ─────────────────────────
-    console.print("\n[cyan][ENRICH][/cyan] Starting contextual enrichment...")
-    console.print(
-        "[dim]Anthropic Contextual Retrieval: prepending document context to each chunk[/dim]"
-    )
-    console.print(
-        "[dim]Reduces retrieval failures by 35-49% (Anthropic research, 2024)[/dim]"
-    )
-    console.print(
-        "[dim]Using Groq free tier with rate-limit backoff. "
-        "Progress saved — safe to Ctrl+C and resume.[/dim]"
-    )
-
-    skip_enrichment = os.getenv("RAG_SKIP_CONTEXTUAL_ENRICHMENT", "").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
-    enrichment_enabled = not skip_enrichment and config.GROQ_API_KEY != "your_groq_key_here"
-
-    if not enrichment_enabled:
-        reason = "disabled for this deployment" if skip_enrichment else "GROQ_API_KEY not configured"
-        console.print(f"[yellow][ENRICH] Contextual enrichment skipped: {reason}.[/yellow]")
-        enriched_nodes = all_nodes
-    else:
-        groq_client = Groq(model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY)
-
-        # Load resume cache
-        os.makedirs(config.QDRANT_DIR, exist_ok=True)
-        cache_path = os.path.join(config.QDRANT_DIR, "enrich_cache.json")
-        cache = load_enrich_cache(cache_path)
-
-        enriched_nodes = []
-        skipped = 0
-        enriched_count = 0
-
-        with Progress(
-            SpinnerColumn(), TextColumn("{task.description}"),
-            BarColumn(), TimeElapsedColumn(), console=console
-        ) as progress:
-            task = progress.add_task("[cyan]Enriching chunks...", total=len(all_nodes))
-
-            for i, node in enumerate(all_nodes):
-                chunk_text = node.text
-                chunk_id = _chunk_hash(chunk_text)
-
-                # Check resume cache
-                if chunk_id in cache:
-                    node.text = cache[chunk_id]
-                    enriched_nodes.append(node)
-                    skipped += 1
-                    progress.advance(task)
-                    continue
-
-                # Get full document for this chunk
-                fname = node.metadata.get("file_name", "")
-                full_doc = all_documents_text.get(fname, chunk_text)
-
-                progress.update(task, description=f"[cyan]Enriching chunk {i+1}/{len(all_nodes)} ({fname})...")
-
-                enriched_text = enrich_chunk_with_context(
-                    chunk_text=chunk_text,
-                    full_document=full_doc,
-                    groq_client=groq_client
-                )
-
-                node.text = enriched_text
-                cache[chunk_id] = enriched_text
-                enriched_nodes.append(node)
-                enriched_count += 1
-
-                # Save cache after every chunk — safe to interrupt
-                save_enrich_cache(cache, cache_path)
-
-                # Respect Groq rate limits: ~1 second between calls
-                # keeps us well under 30 RPM on the free tier
-                time.sleep(config.ENRICH_DELAY_SECONDS)
-                progress.advance(task)
-
-        console.print(
-            f"[green][ENRICH][/green] Done! "
-            f"{enriched_count} enriched, {skipped} from cache ✓"
-        )
-
-    # ── Save nodes for BM25 ───────────────────────────────────
-    os.makedirs(config.QDRANT_DIR, exist_ok=True)
-    nodes_path = os.path.join(config.QDRANT_DIR, "nodes.pkl")
-    with open(nodes_path, "wb") as f:
-        pickle.dump(enriched_nodes, f)
-    console.print(f"[green][CHUNK][/green] Saved {len(enriched_nodes)} nodes for BM25 ✓")
-
-    # ── Build Qdrant vector index ─────────────────────────────
-    console.print(f"\n[cyan][INDEX][/cyan] Building vector index → {config.QDRANT_DIR}/...")
-
-    qdrant_client = QdrantClient(path=config.QDRANT_DIR)
-    try:
-        qdrant_client.delete_collection(config.COLLECTION_NAME)
-        console.print("[yellow][INDEX][/yellow] Cleared existing index")
-    except Exception:
-        pass
-
-    qdrant_client.create_collection(
+    Path(config.QDRANT_DIR).mkdir(parents=True, exist_ok=True)
+    client = QdrantClient(path=config.QDRANT_DIR)
+    existing = {entry.name for entry in client.get_collections().collections}
+    if config.COLLECTION_NAME in existing:
+        client.delete_collection(config.COLLECTION_NAME)
+    client.create_collection(
         collection_name=config.COLLECTION_NAME,
-        vectors_config=VectorParams(size=config.EMBED_DIMENSION, distance=Distance.COSINE)
+        vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
     )
+    store = QdrantVectorStore(client=client, collection_name=config.COLLECTION_NAME)
+    storage = StorageContext.from_defaults(vector_store=store)
+    VectorStoreIndex(nodes, storage_context=storage, show_progress=True)
 
-    vector_store = QdrantVectorStore(
-        client=qdrant_client,
-        collection_name=config.COLLECTION_NAME
+    # Persist a compact catalogue for lexical retrieval and source reporting.
+    node_path = Path(config.QDRANT_DIR) / "nodes.pkl"
+    temp_nodes = node_path.with_suffix(".tmp")
+    with temp_nodes.open("wb") as stream:
+        pickle.dump(nodes, stream, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(temp_nodes, node_path)
+
+    manifest = {
+        "model": config.EMBED_MODEL,
+        "dimension": dimension,
+        "collection": config.COLLECTION_NAME,
+        "chunk_size": config.CHUNK_SIZE,
+        "chunk_overlap": config.CHUNK_OVERLAP,
+        "node_count": len(nodes),
+    }
+    manifest_path = Path(config.QDRANT_DIR) / "embedding_config.json"
+    temp_manifest = manifest_path.with_suffix(".tmp")
+    temp_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    os.replace(temp_manifest, manifest_path)
+    client.close()
+
+def ingest() -> dict:
+    problems = config.validate_runtime()
+    if problems:
+        raise RuntimeError("; ".join(problems))
+    docs_dir = Path(config.DOCS_DIR)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    files = sorted(
+        path for path in docs_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
     )
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    if not files:
+        raise RuntimeError(f"No supported documents found in {docs_dir.resolve()}")
 
-    VectorStoreIndex(
-        enriched_nodes,
-        storage_context=storage_context,
-        show_progress=True
-    )
+    all_documents, overviews = [], {}
+    failures = []
+    for path in files:
+        try:
+            documents = _extract_document(path)
+            if not documents:
+                failures.append(f"{path.name}: parser returned no text")
+                continue
+            for document in documents:
+                document.metadata["file_name"] = path.name
+            all_documents.extend(documents)
+            overviews[path.name] = "\n".join(item.text for item in documents)
+        except Exception as exc:
+            failures.append(f"{path.name}: {type(exc).__name__}: {exc}")
+    if not all_documents:
+        raise RuntimeError("No readable document text was found. " + "; ".join(failures))
 
-    # Write the index manifest only after the vector index is fully built.
-    # Docker uses this to detect stale/incomplete indexes after model changes.
-    manifest_path = os.path.join(config.QDRANT_DIR, "embedding_config.json")
-    manifest_tmp = manifest_path + ".tmp"
-    with open(manifest_tmp, "w", encoding="utf-8") as manifest_file:
-        json.dump(
-            {
-                "model": config.EMBED_MODEL,
-                "dimension": config.EMBED_DIMENSION,
-                "collection": config.COLLECTION_NAME,
-            },
-            manifest_file,
-            indent=2,
-        )
-    os.replace(manifest_tmp, manifest_path)
-    console.print(f"[green][INDEX][/green] Saved embedding manifest: {manifest_path}")
-
-    elapsed = round(time.time() - start, 1)
-    console.print(f"\n[bold green]✅ Ingestion complete in {elapsed}s![/bold green]")
-    console.print(f"   • Documents:  [white]{len(doc_files)}[/white]")
-    console.print(f"   • Chunks:     [white]{len(enriched_nodes)}[/white]")
-    console.print(f"   • Parser:     [white]{parser_name}[/white]")
-    console.print(f"   • Enriched:   [white]{'Yes' if enrichment_enabled else 'No (disabled or missing GROQ_API_KEY)'}[/white]")
-    console.print(f"   • Stored in:  [white]{config.QDRANT_DIR}/[/white]")
-    console.print("\n[bold cyan]Now run:[/bold cyan] python query.py")
-
+    nodes = _chunk_documents(all_documents)
+    enrichment_llm = None
+    if os.getenv("RAG_ENABLE_CONTEXTUAL_ENRICHMENT", "false").lower() in {"1", "true", "yes"}:
+        if not config.GROQ_API_KEY:
+            raise RuntimeError("Contextual enrichment requested but GROQ_API_KEY is missing")
+        from llama_index.llms.groq import Groq
+        enrichment_llm = Groq(model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY)
+    nodes = enrich_nodes(nodes, overviews, enrichment_llm)
+    build_index(nodes)
+    return {
+        "documents": len(all_documents),
+        "files": len(files),
+        "chunks": len(nodes),
+        "collection": config.COLLECTION_NAME,
+        "warnings": failures,
+    }
 
 if __name__ == "__main__":
-    ingest()
+    result = ingest()
+    print(json.dumps(result, indent=2))
