@@ -24,6 +24,7 @@ import time
 import pickle
 import asyncio
 import sys
+import traceback
 import aiofiles
 from pathlib import Path
 from datetime import datetime
@@ -149,11 +150,31 @@ async def _initialize_models_and_index():
         with nodes_path.open("rb") as f:
             nodes_store = pickle.load(f)
 
+        if not nodes_store:
+            raise RuntimeError("The document index contains no chunks.")
+
+        probe_vector = embed_model.get_query_embedding("RAG readiness check")
+        if probe_vector is None or len(probe_vector) != config.EMBED_DIMENSION:
+            actual_dimension = None if probe_vector is None else len(probe_vector)
+            raise RuntimeError(
+                f"Embedding dimension mismatch: expected {config.EMBED_DIMENSION}, "
+                f"received {actual_dimension}."
+            )
+
+        probe_results = index.as_retriever(similarity_top_k=1).retrieve("RAG readiness check")
+        if not probe_results:
+            raise RuntimeError("The vector index returned no results during readiness validation.")
+
+        print(
+            f"Retrieval readiness check passed: {len(nodes_store)} chunks, "
+            f"{len(probe_vector)}-dimensional embeddings."
+        )
         MODELS_LOADED = True
         print(f"Ready! Index loaded with {len(nodes_store)} chunks.")
     except Exception as e:
         MODELS_LOADED = False
-        print(f"Model/index initialization failed: {e}")
+        print(f"Model/index initialization failed: {type(e).__name__}: {e}")
+        traceback.print_exc()
 
 
 @app.on_event("startup")
@@ -439,6 +460,8 @@ async def query_endpoint(request: Request):
             yield send_event("done", {"status": "complete"})
 
         except Exception as e:
+            print(f"Query pipeline failed: {type(e).__name__}: {e}")
+            traceback.print_exc()
             yield send_event("error", {"message": str(e)})
 
     return StreamingResponse(
