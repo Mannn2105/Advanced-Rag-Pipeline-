@@ -73,12 +73,12 @@ def enrich_nodes(nodes: list, documents_by_name: dict, llm=None) -> list:
             node.text = original
         cache[digest] = node.text
         changed = True
-        if changed:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = cache_path.with_suffix(".tmp")
-            temp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-            os.replace(temp, cache_path)
-            time.sleep(max(0.0, config.ENRICH_DELAY_SECONDS))
+        time.sleep(max(0.0, config.ENRICH_DELAY_SECONDS))
+    if changed:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = cache_path.with_suffix(".tmp")
+        temp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        os.replace(temp, cache_path)
     return nodes
 
 def build_index(nodes: list) -> None:
