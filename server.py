@@ -135,15 +135,20 @@ async def _initialize_models_and_index():
         except (OSError, json.JSONDecodeError):
             manifest = None
 
-        # Build the index in the background when it is missing or was created
-        # with a different embedding model. The HTTP server remains responsive
-        # while the first-time ingestion runs, so platform health checks can pass.
-        if not nodes_path.is_file() or not config.manifest_matches(manifest):
-            print("Index missing or outdated; running document ingestion...")
-            process = await asyncio.create_subprocess_exec(sys.executable, "ingest.py")
-            return_code = await process.wait()
-            if return_code != 0:
-                raise RuntimeError(f"Document ingestion exited with code {return_code}")
+        # Never rebuild a persistent vector index as a side effect of API startup.
+        # Ingestion is an explicit maintenance operation so a deployment cannot
+        # unexpectedly rewrite a mounted volume or exhaust its memory budget.
+        if not nodes_path.is_file():
+            raise RuntimeError(
+                f"Persisted node catalogue is missing at {nodes_path}. "
+                "Run python ingest.py explicitly after verifying the QDRANT_DIR mount."
+            )
+        if not config.manifest_matches(manifest):
+            raise RuntimeError(
+                "Persisted Qdrant index is missing or incompatible with the configured "
+                "embedding model, dimension, or collection. Back up the volume and run "
+                "python ingest.py explicitly after verifying the QDRANT_DIR mount."
+            )
 
         embed_model, fast_llm, final_llm = await asyncio.to_thread(init_models)
         index = await asyncio.to_thread(load_index)
