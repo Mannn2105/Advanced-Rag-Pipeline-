@@ -225,12 +225,17 @@ async def list_conversations():
     history = _load_history()
     convos = []
     for cid, data in history.items():
+        try:
+            safe_cid = validate_conversation_id(cid)
+        except ValueError:
+            # Do not expose legacy or malformed IDs to the sidebar.
+            continue
         messages = data.get("messages", [])
         title = data.get("title", "Untitled")
         created = data.get("created", "")
         updated = data.get("updated", "")
         convos.append({
-            "id": cid,
+            "id": safe_cid,
             "title": title,
             "message_count": len(messages),
             "created": created,
