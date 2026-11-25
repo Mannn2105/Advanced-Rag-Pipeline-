@@ -76,6 +76,9 @@ jobs:
       - name: Run core retrieval utility tests
         run: python tests.py
 
+      - name: Compile the real-index smoke evaluator
+        run: python -m py_compile evaluation/run_index_smoke.py
+
       - name: Run evaluator unit tests
         run: python -m unittest discover -s evaluation -p "test_*.py" -v
 
