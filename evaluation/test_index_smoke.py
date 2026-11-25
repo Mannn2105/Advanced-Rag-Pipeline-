@@ -26,7 +26,7 @@ class IndexSmokeTests(unittest.TestCase):
                 pickle.dump([{"placeholder": True}], stream)
             questions = root / "questions.jsonl"
             questions.write_text(
-                json.dumps({"test_id": "q1", "question": "A question"}) + "\\n",
+                json.dumps({"test_id": "q1", "question": "A question"}) + "\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "expected_source_files"):
