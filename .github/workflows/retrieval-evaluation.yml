@@ -65,10 +65,10 @@ jobs:
           from pathlib import Path
 
           html = Path("app.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script\\b[^>]*>([\\s\\S]*?)</script>", html, re.IGNORECASE)
+          scripts = re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", html, re.IGNORECASE)
           if not scripts:
               raise SystemExit("No inline JavaScript found in app.html")
-          Path("/tmp/app-inline.js").write_text("\\n".join(scripts), encoding="utf-8")
+          Path("/tmp/app-inline.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
           node --check /tmp/app-inline.js
       - name: Run authentication unit tests
