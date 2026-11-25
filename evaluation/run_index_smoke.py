@@ -45,7 +45,9 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
     if not records:
         raise ValueError(f"No smoke questions found in {questions_path}")
 
-    index = pipeline.load_index()
+    # Respect the explicit CLI path; never silently evaluate the app's configured
+    # (potentially production-mounted) Qdrant directory instead.
+    index = pipeline.load_index(qdrant_dir=index_dir)
     metric_records = []
     per_query = []
     try:
