@@ -50,12 +50,24 @@ class IndexSmokeTests(unittest.TestCase):
                 json.dumps(row) + "\\n" + json.dumps(row) + "\\n",
                 encoding="utf-8",
             )
-            with patch(
-                "llama_index.embeddings.huggingface.HuggingFaceEmbedding"
-            ) as embedding_model:
+            core = ModuleType("llama_index.core")
+            core.Settings = SimpleNamespace(embed_model=None)
+            embeddings = ModuleType("llama_index.embeddings")
+            embeddings.__path__ = []
+            huggingface = ModuleType("llama_index.embeddings.huggingface")
+            huggingface.HuggingFaceEmbedding = unittest.mock.Mock()
+            fake_llama = ModuleType("llama_index")
+            fake_llama.__path__ = []
+
+            with patch.dict("sys.modules", {
+                "llama_index": fake_llama,
+                "llama_index.core": core,
+                "llama_index.embeddings": embeddings,
+                "llama_index.embeddings.huggingface": huggingface,
+            }):
                 with self.assertRaisesRegex(ValueError, "Duplicate test_id"):
                     run_smoke(index_dir, questions)
-                embedding_model.assert_not_called()
+                huggingface.HuggingFaceEmbedding.assert_not_called()
 
     def test_does_not_close_qdrant_client_owned_by_caller(self):
         with tempfile.TemporaryDirectory() as temporary:
