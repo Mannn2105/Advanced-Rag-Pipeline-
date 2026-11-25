@@ -4,11 +4,13 @@ Run `python tests.py` for deterministic unit checks. Pass `--live` to run
 the question set against the configured LLMs and local index.
 """
 import argparse
+import os
 import json
 import re
 import unittest
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import config
 from pipeline import (
@@ -125,6 +127,28 @@ class IngestionPromotionTests(unittest.TestCase):
 
             self.assertEqual((active / "index.txt").read_text(encoding="utf-8"), "known-good index")
             self.assertEqual(sorted(path.name for path in root.iterdir()), ["qdrant_db"])
+
+    def test_failed_promotion_restores_previous_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "qdrant_db"
+            staging = root / "qdrant_db.staging"
+            active.mkdir()
+            staging.mkdir()
+            (active / "index.txt").write_text("known-good index", encoding="utf-8")
+            (staging / "index.txt").write_text("candidate index", encoding="utf-8")
+            real_replace = os.replace
+
+            with mock.patch("ingest.os.replace", side_effect=[
+                real_replace,
+                OSError("simulated activation failure"),
+                real_replace,
+            ]):
+                with self.assertRaisesRegex(OSError, "simulated activation failure"):
+                    promote_staged_index(staging, active)
+
+            self.assertEqual((active / "index.txt").read_text(encoding="utf-8"), "known-good index")
+            self.assertTrue(staging.is_dir())
 
 
 class AnswerScoringTests(unittest.TestCase):
