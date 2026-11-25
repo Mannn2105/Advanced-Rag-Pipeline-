@@ -60,6 +60,8 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
 
     metric_records = []
     per_query = []
+    # Do not close a Qdrant client that was already owned by the caller.
+    client_before_evaluation = pipeline._qdrant_client
     try:
         # Respect the explicit CLI path; never silently evaluate the app's configured
         # (potentially production-mounted) Qdrant directory instead.
@@ -97,7 +99,7 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
             })
     finally:
         client = pipeline._qdrant_client
-        if client is not None:
+        if client is not None and client is not client_before_evaluation:
             client.close()
             pipeline._qdrant_client = None
             pipeline._qdrant_dir = None
