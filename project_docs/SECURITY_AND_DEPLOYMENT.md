@@ -110,3 +110,15 @@ Retrieval unit tests exercise reciprocal-rank fusion, duplicate removal, per-sou
 
 **Still required before a live release:** run the real parser dependencies against representative PDF/DOCX/TXT/CSV/Markdown files; build a disposable Qdrant index with the configured embedding model; verify the indexed point count and BM25 snapshot; execute the ten smoke questions against that index; inspect source/page attribution and unsupported-answer behavior; then run an authenticated query against the deployment. Keep production data untouched during this validation.
 
+## Real-index retrieval smoke evaluator
+
+After installing the full pinned requirements and creating a **disposable local Qdrant index**, run:
+
+```bash
+python -m evaluation.run_index_smoke --index-dir ./qdrant_db --k 5 --output ./evaluation/index-smoke-report.json
+```
+
+The evaluator initializes the configured Hugging Face embedding model, loads the Qdrant collection and BM25 `nodes.pkl` snapshot, and runs the ten labelled questions through vector retrieval, BM25, reciprocal-rank fusion, and source-diversity filtering. It reports source-file precision/recall, MRR, NDCG, and per-question missing source files. It does not call Groq/OpenRouter, generate answers, or score factual answer quality.
+
+Run it only against a disposable local index or a separately provisioned test environment. Do not point it at the live Railway volume: opening the same local Qdrant storage while the service is running can conflict with the application's active database handle. Stop any local process using the test index before running the evaluator.
+
