@@ -25,11 +25,28 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
             f"BM25 node snapshot not found at {nodes_path}. Run ingestion first."
         )
 
-    from llama_index.core import Settings
-    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    records = load_jsonl(questions_path)
+    if not records:
+        raise ValueError(f"No smoke questions found in {questions_path}")
+    for row_number, question in enumerate(records, start=1):
+        if not isinstance(question, dict):
+            raise ValueError(f"Question {row_number} must be a JSON object")
+        if not isinstance(question.get("test_id"), str) or not question["test_id"].strip():
+            raise ValueError(f"Question {row_number} needs a non-empty test_id")
+        if not isinstance(question.get("question"), str) or not question["question"].strip():
+            raise ValueError(f"Question {row_number} needs a non-empty question")
+        expected = question.get("expected_source_files")
+        if not isinstance(expected, list) or not expected or any(
+            not isinstance(source, str) or not source.strip() for source in expected
+        ):
+            raise ValueError(
+                f"Question {row_number} needs a non-empty expected_source_files list"
+            )
 
     # Retrieval needs embeddings, but this script deliberately does not initialize
     # Groq/OpenRouter clients because it does not generate answers.
+    from llama_index.core import Settings
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     Settings.embed_model = HuggingFaceEmbedding(
         model_name=config.EMBED_MODEL,
         device="cpu",
@@ -41,16 +58,12 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
     if not isinstance(nodes_store, list) or not nodes_store:
         raise ValueError(f"{nodes_path} does not contain a non-empty node list")
 
-    records = load_jsonl(questions_path)
-    if not records:
-        raise ValueError(f"No smoke questions found in {questions_path}")
-
-    # Respect the explicit CLI path; never silently evaluate the app's configured
-    # (potentially production-mounted) Qdrant directory instead.
-    index = pipeline.load_index(qdrant_dir=index_dir)
     metric_records = []
     per_query = []
     try:
+        # Respect the explicit CLI path; never silently evaluate the app's configured
+        # (potentially production-mounted) Qdrant directory instead.
+        index = pipeline.load_index(qdrant_dir=index_dir)
         for question in records:
             query = question["question"]
             ranked_lists = pipeline.hybrid_retrieve_single(
@@ -87,6 +100,7 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
         if client is not None:
             client.close()
             pipeline._qdrant_client = None
+            pipeline._qdrant_dir = None
 
     report = evaluate_records(metric_records, k=k)
     return {
