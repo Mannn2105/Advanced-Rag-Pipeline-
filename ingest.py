@@ -13,6 +13,8 @@ import json
 import pickle
 import re
 import time
+import shutil
+import uuid
 from pathlib import Path
 
 import config
@@ -81,7 +83,8 @@ def enrich_nodes(nodes: list, documents_by_name: dict, llm=None) -> list:
         os.replace(temp, cache_path)
     return nodes
 
-def build_index(nodes: list) -> None:
+def build_index(nodes: list, qdrant_dir: str | Path | None = None) -> None:
+    """Build a complete index in the supplied directory without touching the active index."""
     from llama_index.core import StorageContext, VectorStoreIndex, Settings
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     from llama_index.vector_stores.qdrant import QdrantVectorStore
@@ -90,6 +93,9 @@ def build_index(nodes: list) -> None:
 
     if not nodes:
         raise ValueError("No chunks were produced; refusing to create an empty index")
+    target_dir = Path(qdrant_dir or config.QDRANT_DIR)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
     embedding = HuggingFaceEmbedding(
         model_name=config.EMBED_MODEL,
         device="cpu",
@@ -102,39 +108,63 @@ def build_index(nodes: list) -> None:
             f"Configured dimension {config.EMBED_DIMENSION} does not match model output {dimension}"
         )
 
-    Path(config.QDRANT_DIR).mkdir(parents=True, exist_ok=True)
-    client = QdrantClient(path=config.QDRANT_DIR)
-    existing = {entry.name for entry in client.get_collections().collections}
-    if config.COLLECTION_NAME in existing:
-        client.delete_collection(config.COLLECTION_NAME)
-    client.create_collection(
-        collection_name=config.COLLECTION_NAME,
-        vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
-    )
-    store = QdrantVectorStore(client=client, collection_name=config.COLLECTION_NAME)
-    storage = StorageContext.from_defaults(vector_store=store)
-    VectorStoreIndex(nodes, storage_context=storage, show_progress=True)
+    client = QdrantClient(path=str(target_dir))
+    try:
+        existing = {entry.name for entry in client.get_collections().collections}
+        if config.COLLECTION_NAME in existing:
+            raise RuntimeError(
+                f"Staging collection '{config.COLLECTION_NAME}' already exists; "
+                "refusing to overwrite data in the staging directory"
+            )
+        client.create_collection(
+            collection_name=config.COLLECTION_NAME,
+            vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
+        )
+        store = QdrantVectorStore(client=client, collection_name=config.COLLECTION_NAME)
+        storage = StorageContext.from_defaults(vector_store=store)
+        VectorStoreIndex(nodes, storage_context=storage, show_progress=True)
 
-    # Persist a compact catalogue for lexical retrieval and source reporting.
-    node_path = Path(config.QDRANT_DIR) / "nodes.pkl"
-    temp_nodes = node_path.with_suffix(".tmp")
-    with temp_nodes.open("wb") as stream:
-        pickle.dump(nodes, stream, protocol=pickle.HIGHEST_PROTOCOL)
-    os.replace(temp_nodes, node_path)
+        node_path = target_dir / "nodes.pkl"
+        temp_nodes = node_path.with_suffix(".tmp")
+        with temp_nodes.open("wb") as stream:
+            pickle.dump(nodes, stream, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(temp_nodes, node_path)
 
-    manifest = {
-        "model": config.EMBED_MODEL,
-        "dimension": dimension,
-        "collection": config.COLLECTION_NAME,
-        "chunk_size": config.CHUNK_SIZE,
-        "chunk_overlap": config.CHUNK_OVERLAP,
-        "node_count": len(nodes),
-    }
-    manifest_path = Path(config.QDRANT_DIR) / "embedding_config.json"
-    temp_manifest = manifest_path.with_suffix(".tmp")
-    temp_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    os.replace(temp_manifest, manifest_path)
-    client.close()
+        manifest = {
+            "model": config.EMBED_MODEL,
+            "dimension": dimension,
+            "collection": config.COLLECTION_NAME,
+            "chunk_size": config.CHUNK_SIZE,
+            "chunk_overlap": config.CHUNK_OVERLAP,
+            "node_count": len(nodes),
+        }
+        manifest_path = target_dir / "embedding_config.json"
+        temp_manifest = manifest_path.with_suffix(".tmp")
+        temp_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        os.replace(temp_manifest, manifest_path)
+    finally:
+        client.close()
+
+
+def promote_staged_index(staging_dir: str | Path, target_dir: str | Path) -> Path | None:
+    """Atomically activate a staged index and retain the previous directory for rollback."""
+    staging = Path(staging_dir)
+    target = Path(target_dir)
+    if staging.parent.resolve() != target.parent.resolve():
+        raise ValueError("Staging and active index directories must share a parent filesystem")
+    if not staging.is_dir():
+        raise FileNotFoundError(f"Staged index directory does not exist: {staging}")
+    backup = None
+    if target.exists():
+        backup = target.with_name(f"{target.name}.backup-{int(time.time())}-{uuid.uuid4().hex[:8]}")
+        os.replace(target, backup)
+    try:
+        os.replace(staging, target)
+    except Exception:
+        if backup is not None and backup.exists() and not target.exists():
+            os.replace(backup, target)
+        raise
+    return backup
 
 def ingest() -> dict:
     problems = config.validate_runtime()
@@ -174,12 +204,31 @@ def ingest() -> dict:
         from llama_index.llms.groq import Groq
         enrichment_llm = Groq(model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY)
     nodes = enrich_nodes(nodes, overviews, enrichment_llm)
-    build_index(nodes)
+
+    # Build beside the active directory so promotion is a same-filesystem rename.
+    active_dir = Path(config.QDRANT_DIR)
+    active_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = active_dir.with_name(f"{active_dir.name}.staging-{uuid.uuid4().hex[:10]}")
+    staging_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        # Preserve application state that shares the runtime directory with Qdrant.
+        for filename in ("chat_history.json", "enrichment_cache.json"):
+            source = active_dir / filename
+            if source.is_file():
+                shutil.copy2(source, staging_dir / filename)
+
+        build_index(nodes, staging_dir)
+        backup_dir = promote_staged_index(staging_dir, active_dir)
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
     return {
         "documents": len(all_documents),
         "files": len(files),
         "chunks": len(nodes),
         "collection": config.COLLECTION_NAME,
+        "backup_directory": str(backup_dir) if backup_dir else None,
         "warnings": failures,
     }
 
