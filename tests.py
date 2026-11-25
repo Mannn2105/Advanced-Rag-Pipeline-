@@ -238,6 +238,35 @@ class VolumeMigrationTests(unittest.TestCase):
             self.assertEqual(list(root.iterdir()), [active])
 
 
+class StartupSafetyTests(unittest.TestCase):
+    def test_server_startup_never_runs_ingestion_implicitly(self):
+        server_source = Path(__file__).with_name("server.py").read_text(encoding="utf-8")
+        self.assertNotIn("create_subprocess_exec", server_source)
+        self.assertIn("Run python ingest.py explicitly", server_source)
+        self.assertIn("manifest_matches(manifest)", server_source)
+
+
+class VolumeMigrationRollbackTests(unittest.TestCase):
+    def test_failed_migration_restores_every_moved_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            VolumeMigrationTests()._volume(root)
+            real_replace = os.replace
+
+            with mock.patch("scripts.migrate_qdrant_volume.os.replace", side_effect=[
+                real_replace,
+                OSError("simulated migration failure"),
+                real_replace,
+            ]):
+                with self.assertRaisesRegex(OSError, "simulated migration failure"):
+                    migrate_volume(root, apply=True, service_stopped=True)
+
+            self.assertTrue((root / "nodes.pkl").is_file())
+            self.assertTrue((root / "embedding_config.json").is_file())
+            self.assertTrue((root / "collection_data" / "segment.bin").is_file())
+            self.assertFalse((root / "active").exists())
+
+
 class AnswerScoringTests(unittest.TestCase):
     def test_score_requires_expected_indicators(self):
         score, _ = auto_score("Power use is 0.8 W.", {"keywords_pass": ["0.8"], "keywords_fail": []})
