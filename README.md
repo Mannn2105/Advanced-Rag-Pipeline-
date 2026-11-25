@@ -6,6 +6,16 @@ A Python-based document question-answering system that combines dense and sparse
   <a href="https://github.com/Mannn2105/Advanced-Rag-Pipeline-"><strong>Source code</strong></a>
 </p>
 
+## Hosted deployment
+
+- **API status:** [Check service readiness](https://rag-api-live-production.up.railway.app/api/status)
+- **Service:** Railway-hosted FastAPI application
+- **Embedding model:** `BAAI/bge-small-en-v1.5`
+- **Demo corpus:** Four included Markdown documents, previously indexed into 29 chunks
+- **Access:** The chat interface is protected with HTTP Basic Authentication. Credentials are stored in Railway environment variables and are not published in this repository.
+
+The hosted environment is configured for lightweight sentence-based chunking and skips optional contextual enrichment during initial indexing. A successful deployment status alone does not establish end-to-end retrieval quality; validate an authenticated query and its source attribution before relying on the service.
+
 ## What it demonstrates
 
 - **Hybrid retrieval:** combines Qdrant vector search with BM25 keyword search.
@@ -60,13 +70,14 @@ flowchart TD
     L --> M[Stream response with sources]
 ```
 
-See [Architecture Notes](project_docs/ARCHITECTURE.md) for more detail.
+See [Architecture Notes](project_docs/ARCHITECTURE.md) for more detail. Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), [Provenance Review](project_docs/PROVENANCE.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md) before exposing the API publicly.
 
 ## Repository structure
 
 ```text
 .
-├── project_docs/        # Architecture and evaluation documentation
+├── project_docs/        # Architecture, provenance, security and evaluation documentation
+├── evaluation/          # Retrieval metrics, sample data and unit tests
 ├── .env.example         # Placeholder environment configuration
 ├── docs/                # Documents available for ingestion
 ├── config.py            # Model, retrieval and application settings
@@ -169,7 +180,9 @@ The main settings are defined in `config.py`. Current defaults include:
 | `VECTOR_TOP_K` | `15` | Vector retrieval candidates |
 | `BM25_TOP_K` | `10` | BM25 retrieval candidates |
 | `RERANK_TOP_N` | `8` | Candidates retained after reranking |
-| `CHUNK_SIZE` | `512` | Fallback chunk size |
+| `CHUNK_SIZE` | `512` | Sentence chunk size
+| `RAG_SIMPLE_CHUNKING` | `true` | Use lightweight sentence chunking
+| `RAG_SKIP_CONTEXTUAL_ENRICHMENT` | `true` | Disable optional ingestion-time enrichment |
 
 Check `config.py` for the authoritative settings and provider requirements.
 
@@ -190,7 +203,7 @@ python tests.py --test R-01
 
 Evaluation requires the local index, source documents, and relevant provider credentials. Results depend on the selected documents, models, and configuration. Do not interpret research-reported improvements or illustrative figures as benchmark results measured by this repository unless you reproduce and document the experiment.
 
-See [Evaluation Guide](project_docs/EVALUATION.md) for metric definitions and a reproducible comparison plan.
+See [Evaluation Guide](project_docs/EVALUATION.md) for metric definitions and a reproducible comparison plan. The independent [retrieval-metrics utility](evaluation/README.md) runs without provider credentials; the hosted service still requires valid provider credentials for full chat functionality.
 
 ## Security and responsible use
 
