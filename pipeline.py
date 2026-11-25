@@ -45,13 +45,18 @@ def init_models():
     if not config.OPENROUTER_API_KEY:
         raise RuntimeError("OPENROUTER_API_KEY is not configured")
 
-    fast_llm = Groq(model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY)
+    fast_llm = Groq(
+        model=config.GROQ_MODEL,
+        api_key=config.GROQ_API_KEY,
+        timeout=config.RAG_LLM_TIMEOUT_SECONDS,
+    )
     answer_llm = OpenAILike(
         model=config.OPENROUTER_MODEL,
         api_base=config.OPENROUTER_BASE_URL,
         api_key=config.OPENROUTER_API_KEY,
         is_chat_model=True,
         max_tokens=2048,
+        timeout=config.RAG_LLM_TIMEOUT_SECONDS,
     )
     Settings.llm = answer_llm
     return _embedding, fast_llm, answer_llm
