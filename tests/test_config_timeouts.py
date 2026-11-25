@@ -9,7 +9,12 @@ class PositiveFloatEnvironmentTests(unittest.TestCase):
         self.assertEqual(_positive_float_env("RAG_LLM_TIMEOUT_SECONDS", 60.0), 60.0)
 
     def test_accepts_positive_integer_or_decimal(self):
-        self.assertEqual(_positive_float_env("RAG_LLM_TIMEOUT_SECONDS", 60.0), 60.0)
+        import os
+        from unittest.mock import patch
+
+        for raw, expected in (("45", 45.0), ("12.5", 12.5)):
+            with self.subTest(raw=raw), patch.dict(os.environ, {"RAG_LLM_TIMEOUT_SECONDS": raw}):
+                self.assertEqual(_positive_float_env("RAG_LLM_TIMEOUT_SECONDS", 60.0), expected)
 
     def test_rejects_invalid_zero_and_negative_values(self):
         import os
