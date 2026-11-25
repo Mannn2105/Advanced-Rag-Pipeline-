@@ -1,55 +1,53 @@
-# Orchestrated RAG — Advanced Retrieval-Augmented Generation
+# Advanced RAG Pipeline
 
-A document question-answering project that combines multiple retrieval and reasoning techniques to answer questions grounded in a user's own files. It includes a FastAPI backend, browser-based chat interface, streaming responses, and source attribution.
+A Python-based document question-answering system that combines dense and sparse retrieval, query expansion, reranking, context compression, and answer generation. The project exposes the pipeline through a **FastAPI backend** and a browser-based chat interface with streaming responses and source attribution.
 
-The project explores how hybrid search, query expansion, reranking, context filtering, and fallback retrieval work together in a multi-stage RAG workflow.
+<p align="center">
+  <a href="https://github.com/Mannn2105/Advanced-Rag-Pipeline-"><strong>Source code</strong></a>
+</p>
 
 ## Hosted deployment
 
 - **API status:** [Check service readiness](https://rag-api-live-production.up.railway.app/api/status)
 - **Service:** Railway-hosted FastAPI application
 - **Embedding model:** `BAAI/bge-small-en-v1.5`
-- **Demo corpus:** Four included Markdown documents, indexed into 29 chunks
+- **Demo corpus:** Four included Markdown documents, previously indexed into 29 chunks
 - **Access:** The chat interface is protected with HTTP Basic Authentication. Credentials are stored in Railway environment variables and are not published in this repository.
 
-The hosted environment uses lightweight sentence-based chunking and skips optional contextual enrichment during initial indexing. The full chat workflow requires valid Groq, OpenRouter, and Cohere API credentials. Do not expose the chat interface publicly without authentication and appropriate rate limits.
+The hosted environment is configured for lightweight sentence-based chunking and skips optional contextual enrichment during initial indexing. A successful deployment status alone does not establish end-to-end retrieval quality; validate an authenticated query and its source attribution before relying on the service.
 
-
-![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square)
-![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.10.68-purple?style=flat-square)
-
-## Project Highlights
+## What it demonstrates
 
 - **Hybrid retrieval:** combines Qdrant vector search with BM25 keyword search.
-- **Query decomposition and HyDE:** expands complex questions and improves semantic retrieval coverage.
-- **RAG-Fusion:** merges ranked results from multiple retrieval queries using reciprocal rank fusion.
+- **Query expansion:** uses HyDE and query decomposition to improve retrieval coverage.
+- **RAG-Fusion:** merges results from multiple searches using reciprocal rank fusion.
 - **Contextual enrichment:** adds document-level context to chunks during ingestion.
-- **Reranking:** uses Cohere reranking to improve the ordering of retrieved passages.
-- **Context compression:** uses a cross-encoder to retain query-relevant sentences.
-- **CRAG-style fallback:** can use Tavily web search when document context is insufficient.
-- **Answer review:** includes a self-critique stage intended to identify unsupported responses.
-- **Streaming interface:** FastAPI streams answers to a browser UI with conversation history and source information.
+- **Reranking:** applies Cohere reranking to improve the relevance of retrieved passages.
+- **Context compression:** uses a cross-encoder to prioritize query-relevant content.
+- **Web fallback:** can use Tavily when the configured pipeline determines that document context is insufficient.
+- **Answer review:** includes a self-critique stage intended to help identify unsupported answers.
+- **Streaming API and UI:** serves responses through FastAPI and a browser chat interface.
 
-## Technology Stack
+## Technology stack
 
 | Area | Technologies |
 |---|---|
 | Language | Python |
-| API server | FastAPI |
-| RAG orchestration | LlamaIndex |
+| API | FastAPI |
+| RAG framework | LlamaIndex |
 | Vector database | Qdrant |
 | Keyword retrieval | BM25 |
-| Embeddings | BAAI/bge-small-en-v1.5 |
+| Embeddings | BAAI/bge-small-en-v1.5 (configured in `config.py`) |
 | Reranking | Cohere |
-| LLM providers | Groq, OpenRouter / NVIDIA |
-| Web fallback | Tavily |
-| Document parsing | Docling (optional advanced parsing) |
-| Interface | HTML, CSS and JavaScript |
+| Cross-encoder | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| Model providers | Groq, OpenRouter |
+| Web search fallback | Tavily |
+| Document parsing | Docling (optional) |
+| Interface | HTML, CSS, JavaScript |
 
-## System Architecture
+## Architecture
 
-The diagram below summarizes the main flow implemented by the project. Some stages, such as query decomposition and web fallback, are conditional on the query and pipeline configuration.
+The following diagram summarizes the main workflow. Query decomposition, web fallback, and some enrichment steps depend on the query and configuration.
 
 ```mermaid
 flowchart TD
@@ -59,7 +57,7 @@ flowchart TD
     C --> D2[BM25 keyword retrieval]
     B --> D1
     B --> D2
-    D1 --> E[RAG-Fusion<br/>Reciprocal Rank Fusion]
+    D1 --> E[RAG-Fusion / reciprocal rank fusion]
     D2 --> E
     E --> F[Source diversity filtering]
     F --> G[Cohere reranking]
@@ -68,35 +66,34 @@ flowchart TD
     I -- Yes --> J[LLM answer generation]
     I -- No --> K[Tavily web fallback]
     K --> J
-    J --> L[Answer review / self-critique]
+    J --> L[Answer review]
     L --> M[Stream response with sources]
 ```
 
-For a component-by-component explanation, see [Architecture Notes](project_docs/ARCHITECTURE.md). Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md) before exposing the API publicly.
+See [Architecture Notes](project_docs/ARCHITECTURE.md) for more detail. Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), [Provenance Review](project_docs/PROVENANCE.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md) before exposing the API publicly.
 
-## Repository Structure
+## Repository structure
 
 ```text
 .
-├── project_docs/        # Architecture, provenance and evaluation documentation
-├── evaluation/          # Independent retrieval metrics, sample data and unit tests
+├── project_docs/        # Architecture, provenance, security and evaluation documentation
+├── evaluation/          # Retrieval metrics, sample data and unit tests
 ├── .env.example         # Placeholder environment configuration
-├── docs/                # Documents supplied for ingestion at runtime
-├── config.py            # Model, retrieval and application configuration
+├── docs/                # Documents available for ingestion
+├── config.py            # Model, retrieval and application settings
 ├── ingest.py            # Document parsing, enrichment and indexing
-├── pipeline.py          # Multi-stage retrieval and generation pipeline
-├── query.py             # Terminal Q&A interface
+├── pipeline.py          # Retrieval and generation pipeline
+├── query.py             # Terminal question-answering interface
 ├── server.py            # FastAPI server and streaming endpoint
 ├── app.html             # Browser chat interface
 ├── landing.html         # Project landing page
 ├── tests.py             # Question-based regression/evaluation runner
-├── requirements.txt     # Python dependencies
-└── README.md
+└── requirements.txt     # Python dependencies
 ```
 
-Generated vector stores, caches, test outputs, local documents, and secrets should remain local unless intentionally prepared for sharing.
+Generated vector stores, caches, local documents, test outputs, and secrets should remain local unless intentionally prepared for sharing.
 
-## Getting Started
+## Run locally
 
 ### 1. Clone the repository
 
@@ -105,20 +102,20 @@ git clone https://github.com/Mannn2105/Advanced-Rag-Pipeline-.git
 cd Advanced-Rag-Pipeline-
 ```
 
-### 2. Create and activate a virtual environment
+### 2. Create a virtual environment
 
 ```bash
 python -m venv .venv
 ```
 
-Windows PowerShell:
+Activate it:
 
+**Windows PowerShell**
 ```powershell
-.venv\\Scripts\\Activate.ps1
+.venv\Scripts\Activate.ps1
 ```
 
-macOS / Linux:
-
+**macOS / Linux**
 ```bash
 source .venv/bin/activate
 ```
@@ -129,15 +126,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-For optional structure-aware parsing with Docling, install the additional packages noted in the project setup:
+For optional structure-aware parsing with Docling, install the additional packages documented by the project:
 
 ```bash
 pip install docling llama-index-readers-docling llama-index-node-parser-docling
 ```
 
-### 4. Configure API keys
+### 4. Configure environment variables
 
-Create a local `.env` file in the project root. Add the credentials for the providers and services enabled in your configuration:
+Create a local `.env` file in the project root. Add only the API credentials for services you intend to use:
 
 ```dotenv
 GROQ_API_KEY=your_groq_key
@@ -146,23 +143,23 @@ COHERE_API_KEY=your_cohere_key
 TAVILY_API_KEY=your_tavily_key
 ```
 
-Never commit real API keys. Keep `.env` private and use `.env.example` with placeholders if sharing configuration.
+The repository includes `.env.example` with placeholders. Never commit real API keys or paste secrets into issue reports.
 
 ### 5. Add documents and build the index
 
-Place supported files (PDF, DOCX, TXT, Markdown, or CSV) in the runtime `docs/` directory, then run:
+Place supported documents (such as PDF, DOCX, TXT, Markdown, or CSV) in the runtime `docs/` directory, then run:
 
 ```bash
 python ingest.py
 ```
 
-### 6. Run the application
+### 6. Start the application
 
 ```bash
 python server.py
 ```
 
-Open [http://localhost:8000](http://localhost:8000).
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 For terminal-based question answering:
 
@@ -172,62 +169,61 @@ python query.py
 
 ## Configuration
 
-The main configuration is managed in `config.py`. These are the defaults currently defined in the repository:
+The main settings are defined in `config.py`. Current defaults include:
 
 | Setting | Default | Purpose |
 |---|---|---|
 | `GROQ_MODEL` | `openai/gpt-oss-20b` | Supporting pipeline tasks |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Answer generation |
-| `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local 384-dimensional embedding model |
-| `COHERE_RERANK` | `rerank-english-v3.0` | Reranking |
+| `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local embedding model |
+| `COHERE_RERANK` | `rerank-english-v3.0` | Passage reranking |
 | `VECTOR_TOP_K` | `15` | Vector retrieval candidates |
 | `BM25_TOP_K` | `10` | BM25 retrieval candidates |
 | `RERANK_TOP_N` | `8` | Candidates retained after reranking |
-| `CHUNK_SIZE` | `512` | Fallback chunk size |
-| `VERBOSE` | `True` | Pipeline logging |
+| `CHUNK_SIZE` | `512` | Sentence chunk size
+| `RAG_SIMPLE_CHUNKING` | `true` | Use lightweight sentence chunking
+| `RAG_SKIP_CONTEXTUAL_ENRICHMENT` | `true` | Disable optional ingestion-time enrichment |
 
 Check `config.py` for the authoritative settings and provider requirements.
 
-## Tests and Evaluation
+## Tests and evaluation
 
-Run the project's question-based regression/evaluation runner:
+Run the question-based regression/evaluation runner:
 
 ```bash
 python tests.py
 ```
 
-Run a specific test group or test ID using the runner's supported arguments:
+The runner may also support selecting a group or test ID:
 
 ```bash
 python tests.py --group R
 python tests.py --test R-01
 ```
 
-The test runner queries the configured pipeline and therefore requires the local index, documents, and relevant provider credentials to be set up. A successful run has not been claimed as part of this repository documentation update. The independent retrieval-metrics utility does not need provider credentials; see [Evaluation tooling](evaluation/README.md).
+Evaluation requires the local index, source documents, and relevant provider credentials. Results depend on the selected documents, models, and configuration. Do not interpret research-reported improvements or illustrative figures as benchmark results measured by this repository unless you reproduce and document the experiment.
 
-See [Evaluation Guide](project_docs/EVALUATION.md) for a reproducible comparison plan, metric definitions, and a results template. Do not present the historical 35–49% contextual-retrieval figure as a benchmark measured by this project: it is a research-reported result, not independently verified here.
+See [Evaluation Guide](project_docs/EVALUATION.md) for metric definitions and a reproducible comparison plan. The independent [retrieval-metrics utility](evaluation/README.md) runs without provider credentials; the hosted service still requires valid provider credentials for full chat functionality.
 
-## Security and Responsible Use
+## Security and responsible use
 
-- Keep API keys in environment variables and out of source control.
+- Keep credentials in environment variables; never commit a populated `.env` file.
 - Treat retrieved documents and web results as untrusted input.
-- Review source passages for important decisions; retrieval and self-critique do not guarantee factual correctness.
-- Apply authentication, rate limits, and appropriate access controls before exposing the server beyond a trusted local environment.
-- Avoid indexing confidential or personal documents unless you have permission and understand where embeddings and provider requests are processed.
+- Review cited source passages for important decisions; retrieval and self-critique do not guarantee factual correctness.
+- Add authentication, rate limiting, and appropriate access controls before exposing the service publicly.
+- Do not index confidential or personal documents unless you have permission and understand how embeddings and external providers process the data.
 
-## What This Project Demonstrates
+## Limitations and possible improvements
 
-- Building a multi-stage RAG pipeline in Python.
-- Combining vector and keyword retrieval.
-- Applying query expansion, reciprocal rank fusion, reranking, and context compression.
-- Integrating model providers and external search APIs.
-- Exposing an AI workflow through FastAPI and a streaming web interface.
-- Designing regression questions and evaluating retrieval quality.
+- Retrieval quality depends on document quality, chunking, embeddings, and retrieval configuration.
+- External model and reranking services require valid credentials and may have rate or usage limits.
+- Evaluation should be repeated on a representative, held-out question set before making quantitative performance claims.
+- A production deployment should include authentication, monitoring, persistent storage, and explicit data-retention controls.
 
-## License status
+## License
 
-This repository currently has no `LICENSE` file. Do not assume the code is MIT-licensed or grant reuse rights until the project owner has selected and added an appropriate license. The reference repository reviewed during the project audit also has no declared license; obtain permission before reusing its code.
+No license file is currently included in this repository. Unless a license is added by the relevant rights holder, the source code remains subject to the default copyright rules; do not assume it is MIT-licensed or reuse it under MIT terms. The reference repository reviewed during the provenance audit also has no declared license; obtain permission before reusing its code.
 
 ---
 
-Built with Python, LlamaIndex, Qdrant, FastAPI, and modern retrieval techniques.
+Built with Python, FastAPI, LlamaIndex, Qdrant, and retrieval-augmented generation techniques.
