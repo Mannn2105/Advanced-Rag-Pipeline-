@@ -46,7 +46,7 @@ class IndexSmokeTests(unittest.TestCase):
                     "test_id": "q1",
                     "question": "A question",
                     "expected_source_files": ["PROJECT_GUIDE.md"],
-                }) + "\\n",
+                }) + "\n",
                 encoding="utf-8",
             )
 
