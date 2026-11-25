@@ -96,3 +96,9 @@ HyDE and retrieval timings are accumulated across their individual worker calls;
 
 Keep application log access restricted and configure retention in the hosting platform. The existing query error response and traceback behavior are unchanged; review logs before using this service with sensitive documents.
 
+## Ingestion safety checks
+
+The index builder rejects an empty chunk list before importing optional indexing dependencies or opening a Qdrant collection. Staged promotion requires the staging and active directories to share a parent and filesystem. If moving the staged directory into place fails after the previous index has been moved to its backup name, the promotion helper attempts to restore that backup. Automated unit tests cover empty-input rejection, successful promotion with backup retention, cross-parent rejection, and rollback after a simulated rename failure.
+
+These unit tests exercise filesystem promotion behavior with temporary directories; they do not replace a full ingestion run against the deployment's persistent volume or a live Qdrant index.
+
