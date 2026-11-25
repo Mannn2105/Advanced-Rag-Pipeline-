@@ -29,7 +29,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request
 from auth import basic_auth_valid
-from request_validation import validate_query_payload
+from request_validation import validate_conversation_id, validate_query_payload
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.background import BackgroundTask
@@ -243,6 +243,10 @@ async def list_conversations():
 
 @app.get("/api/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str):
+    try:
+        conversation_id = validate_conversation_id(conversation_id)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     history = _load_history()
     if conversation_id not in history:
         return JSONResponse(status_code=404, content={"error": "Not found"})
@@ -251,6 +255,10 @@ async def get_conversation(conversation_id: str):
 
 @app.delete("/api/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str):
+    try:
+        conversation_id = validate_conversation_id(conversation_id)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     history = _load_history()
     if conversation_id in history:
         del history[conversation_id]
@@ -260,6 +268,10 @@ async def delete_conversation(conversation_id: str):
 
 @app.put("/api/conversations/{conversation_id}/title")
 async def rename_conversation(conversation_id: str, request: Request):
+    try:
+        conversation_id = validate_conversation_id(conversation_id)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     body = await request.json()
     new_title = body.get("title", "Untitled")
     history = _load_history()
