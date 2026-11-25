@@ -480,10 +480,17 @@ async def query_endpoint(request: Request):
                             draft_tokens.append(token)
                             yield send_event("token", {"token": token})
                             await asyncio.sleep(0)  # yield control for SSE flush
-                except Exception:
+                except Exception as stream_error:
+                    # Record the streaming failure without logging provider response text.
+                    OBSERVABILITY_LOGGER.info(json.dumps({
+                        "event": "rag_generation_stream_fallback",
+                        "request_id": request_id,
+                        "error_type": type(stream_error).__name__,
+                    }, sort_keys=True))
                     # Fallback: non-streaming generation
-                    draft = await loop.run_in_executor(
-                        None, final_generate, question, compressed_context, final_llm
+                    draft, stage_timings_ms["generate_fallback"] = await loop.run_in_executor(
+                        None, _run_observed, "generate_fallback", request_id,
+                        final_generate, question, compressed_context, final_llm
                     )
                     draft_tokens = [draft]
                     # Send in small chunks to simulate streaming
