@@ -27,13 +27,29 @@ def _extract_document(path: Path):
     return reader.load_data()
 
 def _chunk_documents(documents: list):
-    from llama_index.core.node_parser import SentenceSplitter
-    parser = SentenceSplitter(
-        chunk_size=config.CHUNK_SIZE,
-        chunk_overlap=config.CHUNK_OVERLAP,
-        include_metadata=True,
-        include_prev_next_rel=True,
-    )
+    if config.RAG_SIMPLE_CHUNKING:
+        from llama_index.core.node_parser import SentenceSplitter
+        parser = SentenceSplitter(
+            chunk_size=config.CHUNK_SIZE,
+            chunk_overlap=config.CHUNK_OVERLAP,
+            include_metadata=True,
+            include_prev_next_rel=True,
+        )
+    else:
+        from llama_index.core.node_parser import SemanticSplitterNodeParser
+        from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+        embedding = HuggingFaceEmbedding(
+            model_name=config.EMBED_MODEL,
+            device="cpu",
+            embed_batch_size=config.EMBED_BATCH_SIZE,
+        )
+        parser = SemanticSplitterNodeParser(
+            buffer_size=1,
+            breakpoint_percentile_threshold=95,
+            embed_model=embedding,
+            include_metadata=True,
+            include_prev_next_rel=True,
+        )
     nodes = parser.get_nodes_from_documents(documents)
     for node in nodes:
         metadata = node.metadata or {}
@@ -205,7 +221,7 @@ def ingest() -> dict:
 
     nodes = _chunk_documents(all_documents)
     enrichment_llm = None
-    if os.getenv("RAG_ENABLE_CONTEXTUAL_ENRICHMENT", "false").lower() in {"1", "true", "yes"}:
+    if config.RAG_ENABLE_CONTEXTUAL_ENRICHMENT:
         if not config.GROQ_API_KEY:
             raise RuntimeError("Contextual enrichment requested but GROQ_API_KEY is missing")
         from llama_index.llms.groq import Groq
