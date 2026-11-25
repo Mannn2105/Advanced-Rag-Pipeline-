@@ -1,0 +1,74 @@
+name: Real-index retrieval smoke evaluation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-index-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-evaluate:
+    name: Build disposable Qdrant index and evaluate retrieval
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      QDRANT_DIR: ./qdrant_eval_db
+      RAG_ENABLE_CONTEXTUAL_ENRICHMENT: "false"
+      RAG_SIMPLE_CHUNKING: "true"
+      USE_TF: "0"
+      TRANSFORMERS_NO_TF: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - name: Check out selected branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Verify isolated evaluation target
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          target = Path(os.environ["QDRANT_DIR"]).resolve()
+          if target.exists():
+              raise SystemExit(f"Refusing to reuse existing evaluation path: {target}")
+          if target == Path(".").resolve() or target == Path("/").resolve():
+              raise SystemExit(f"Unsafe evaluation path: {target}")
+          print(f"Disposable index target: {target}")
+          print("Contextual enrichment: disabled")
+          print("No provider API keys are required for this retrieval-only run.")
+          PY
+
+      - name: Build fresh local Qdrant index from demo corpus
+        run: python ingest.py
+
+      - name: Run real hybrid retrieval smoke evaluation
+        run: |
+          python -m evaluation.run_index_smoke \
+            --index-dir "$QDRANT_DIR" \
+            --questions evaluation/rag_smoke_questions.jsonl \
+            --k 5 \
+            --output evaluation/index-smoke-report.json
+
+      - name: Upload retrieval report
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-index-retrieval-report
+          path: evaluation/index-smoke-report.json
+          if-no-files-found: error
+          retention-days: 14
