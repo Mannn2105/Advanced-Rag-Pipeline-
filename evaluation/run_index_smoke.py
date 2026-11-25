@@ -28,11 +28,16 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
     records = load_jsonl(questions_path)
     if not records:
         raise ValueError(f"No smoke questions found in {questions_path}")
+    test_ids = set()
     for row_number, question in enumerate(records, start=1):
         if not isinstance(question, dict):
             raise ValueError(f"Question {row_number} must be a JSON object")
-        if not isinstance(question.get("test_id"), str) or not question["test_id"].strip():
+        test_id = question.get("test_id")
+        if not isinstance(test_id, str) or not test_id.strip():
             raise ValueError(f"Question {row_number} needs a non-empty test_id")
+        if test_id in test_ids:
+            raise ValueError(f"Duplicate test_id: {test_id}")
+        test_ids.add(test_id)
         if not isinstance(question.get("question"), str) or not question["question"].strip():
             raise ValueError(f"Question {row_number} needs a non-empty question")
         expected = question.get("expected_source_files")
