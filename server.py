@@ -17,13 +17,10 @@ os.environ["TRANSFORMERS_NO_TF"] = "1"
 # ============================================================
 
 import json
-import base64
-import hmac
 import uuid
 import time
 import pickle
 import asyncio
-import sys
 import traceback
 import aiofiles
 from pathlib import Path
