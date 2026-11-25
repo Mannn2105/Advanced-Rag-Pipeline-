@@ -90,7 +90,7 @@ The query concurrency slot is released from the SSE async generator's `finally` 
 
 The FastAPI query stream emits structured JSON log records through the `rag.observability` logger. Each query receives a random request ID so stage events can be correlated without logging the user's question, generated answer, document text, or credentials.
 
-Successful stage records include the stage name and elapsed milliseconds. Failed stages include the exception type and elapsed milliseconds, while query-level records include total elapsed time, retrieval/rerank chunk counts, and the selected source type. The SSE `meta` event and saved assistant-message metadata also include the request ID and per-stage timings.
+Successful stage records include the stage name and elapsed milliseconds. Failed stages include the exception type and elapsed milliseconds; a streaming-generation failure that successfully falls back to non-streaming generation emits a dedicated fallback event. Query-level records include total elapsed time, retrieval/rerank chunk counts, and the selected source type. The SSE `meta` event and saved assistant-message metadata also include the request ID and per-stage timings.
 
 HyDE and retrieval timings are accumulated across their individual worker calls; because those operations may overlap, their summed durations are not necessarily equal to wall-clock stage time. Generation timing includes streaming and any non-streaming fallback. These measurements are diagnostic telemetry, not a hard timeout or a performance guarantee.
 
