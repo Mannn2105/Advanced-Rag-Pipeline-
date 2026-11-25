@@ -59,7 +59,7 @@ class IndexSmokeTests(unittest.TestCase):
                     "llama_index.embeddings": embeddings,
                     "llama_index.embeddings.huggingface": huggingface,
                 }),
-                patch.object(pipeline, "load_index", return_value=object()),
+                patch.object(pipeline, "load_index", return_value=object()) as load_index,
                 patch.object(
                     pipeline,
                     "hybrid_retrieve_single",
@@ -69,6 +69,7 @@ class IndexSmokeTests(unittest.TestCase):
             ):
                 report = run_smoke(index_dir, questions, k=5)
 
+            load_index.assert_called_once_with(qdrant_dir=index_dir)
             self.assertEqual(report["question_count"], 1)
             self.assertEqual(report["retrieval_metrics"]["recall@5"], 1.0)
             self.assertEqual(
