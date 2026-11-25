@@ -70,7 +70,7 @@ flowchart TD
     L --> M[Stream response with sources]
 ```
 
-See [Architecture Notes](project_docs/ARCHITECTURE.md) for more detail. Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), [Provenance Review](project_docs/PROVENANCE.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md) before exposing the API publicly.
+See [Architecture Notes](project_docs/ARCHITECTURE.md) for more detail. Review the [Security and Deployment Readiness checklist](project_docs/SECURITY_AND_DEPLOYMENT.md), [Authentication and Conversation Isolation Design](project_docs/AUTHENTICATION_DESIGN.md), [Provenance Review](project_docs/PROVENANCE.md), and [Railway Deployment Troubleshooting](project_docs/DEPLOYMENT_TROUBLESHOOTING.md), including the dry-run-first Qdrant volume migration procedure before exposing the API publicly.
 
 ## Repository structure
 
@@ -78,6 +78,7 @@ See [Architecture Notes](project_docs/ARCHITECTURE.md) for more detail. Review t
 .
 ├── project_docs/        # Architecture, provenance, security and evaluation documentation
 ├── evaluation/          # Retrieval metrics, sample data and unit tests
+├── scripts/             # Guarded persistent-volume migration utilities
 ├── .env.example         # Placeholder environment configuration
 ├── docs/                # Documents available for ingestion
 ├── config.py            # Model, retrieval and application settings
