@@ -32,6 +32,55 @@ class IndexSmokeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "expected_source_files"):
                 run_smoke(index_dir, questions)
 
+
+    def test_does_not_close_qdrant_client_owned_by_caller(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            index_dir = root / "index"
+            index_dir.mkdir()
+            with (index_dir / "nodes.pkl").open("wb") as stream:
+                pickle.dump([{"placeholder": True}], stream)
+            questions = root / "questions.jsonl"
+            questions.write_text(
+                json.dumps({
+                    "test_id": "q1",
+                    "question": "A question",
+                    "expected_source_files": ["PROJECT_GUIDE.md"],
+                }) + "\\n",
+                encoding="utf-8",
+            )
+
+            core = ModuleType("llama_index.core")
+            core.Settings = SimpleNamespace(embed_model=None)
+            embeddings = ModuleType("llama_index.embeddings")
+            huggingface = ModuleType("llama_index.embeddings.huggingface")
+            huggingface.HuggingFaceEmbedding = lambda **kwargs: object()
+            fake_llama = ModuleType("llama_index")
+            fake_llama.__path__ = []
+            embeddings.__path__ = []
+            existing_client = SimpleNamespace(close=unittest.mock.Mock())
+
+            with (
+                patch.dict("sys.modules", {
+                    "llama_index": fake_llama,
+                    "llama_index.core": core,
+                    "llama_index.embeddings": embeddings,
+                    "llama_index.embeddings.huggingface": huggingface,
+                }),
+                patch.object(pipeline, "_qdrant_client", existing_client),
+                patch.object(pipeline, "_qdrant_dir", str(root / "somewhere-else")),
+                patch.object(
+                    pipeline,
+                    "load_index",
+                    side_effect=RuntimeError("Different Qdrant directory already open"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Different Qdrant directory"):
+                    run_smoke(index_dir, questions)
+
+            existing_client.close.assert_not_called()
+            self.assertIs(pipeline._qdrant_client, existing_client)
+
     def test_smoke_report_measures_retrieved_source_recall_without_answer_llms(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
