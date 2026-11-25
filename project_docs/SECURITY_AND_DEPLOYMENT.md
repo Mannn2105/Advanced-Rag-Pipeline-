@@ -119,7 +119,7 @@ Install the full pinned requirements first. Then, from the repository root, crea
 **Windows PowerShell:**
 
 ```powershell
-$env:QDRANT_DIR = ".\\qdrant_eval_db"
+$env:QDRANT_DIR = ".\qdrant_eval_db"
 $env:RAG_ENABLE_CONTEXTUAL_ENRICHMENT = "false"
 
 if (Test-Path $env:QDRANT_DIR) {
@@ -129,7 +129,7 @@ if (Test-Path $env:QDRANT_DIR) {
 python ingest.py
 if ($LASTEXITCODE -ne 0) { throw "Disposable index ingestion failed." }
 
-python -m evaluation.run_index_smoke --index-dir $env:QDRANT_DIR --k 5 --output .\\evaluation\\index-smoke-report.json
+python -m evaluation.run_index_smoke --index-dir $env:QDRANT_DIR --k 5 --output .\evaluation\index-smoke-report.json
 if ($LASTEXITCODE -ne 0) { throw "Retrieval smoke evaluation failed." }
 ```
 
