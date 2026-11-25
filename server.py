@@ -32,7 +32,6 @@ from auth import basic_auth_valid
 from request_validation import validate_conversation_id, validate_query_payload
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.background import BackgroundTask
 from query_limiter import MAX_CONCURRENT_QUERIES, QueryConcurrencyLimiter
 import uvicorn
 
@@ -311,191 +310,195 @@ async def query_endpoint(request: Request):
         def send_event(event_type: str, data: dict) -> str:
             return f"data: {json.dumps({'type': event_type, **data})}\n\n"
 
-        # ── Save user message ─────────────────────────────────
-        now = datetime.now().isoformat()
-        history = _load_history()
-        if conversation_id not in history:
-            history[conversation_id] = {
-                "title": question[:60] + ("..." if len(question) > 60 else ""),
-                "created": now,
-                "updated": now,
-                "messages": []
-            }
-        history[conversation_id]["messages"].append({
-            "role": "user",
-            "content": question,
-            "timestamp": now,
-        })
-        history[conversation_id]["updated"] = now
-        _save_history(history)
-
-        yield send_event("conversation_id", {"conversation_id": conversation_id})
-
         try:
-            # ── STAGE 1: Decompose ────────────────────────────
-            yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
-            loop = asyncio.get_event_loop()
-            sub_queries = await loop.run_in_executor(None, decompose_query, question, fast_llm)
-            yield send_event("stage", {"stage": "decompose", "status": "done", "label": f"Split into {len(sub_queries)} sub-queries"})
-            yield send_event("sub_queries", {"sub_queries": sub_queries})
-
-            # ── STAGE 2: HyDE ─────────────────────────────────
-            yield send_event("stage", {"stage": "hyde", "status": "active", "label": "Expanding with HyDE..."})
-            hyde_queries = {}
-            with ThreadPoolExecutor(max_workers=len(sub_queries)) as ex:
-                futures = {ex.submit(hyde_expand, q, fast_llm): q for q in sub_queries}
-                for future in as_completed(futures):
-                    q = futures[future]
-                    try:
-                        hyde_queries[q] = future.result()
-                    except Exception:
-                        hyde_queries[q] = q
-            yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
-
-            # ── STAGE 3: Retrieve ─────────────────────────────
-            yield send_event("stage", {"stage": "retrieve", "status": "active", "label": "Hybrid retrieval..."})
-            all_result_lists = []
-            for q in sub_queries:
-                hyde_q = hyde_queries[q]
-                hyde_res, orig_res, bm25_res = await loop.run_in_executor(
-                    None, hybrid_retrieve_single, q, hyde_q, index, nodes_store
-                )
-                all_result_lists.extend([hyde_res, orig_res, bm25_res])
-
-            # ── STAGE 4: Fusion ───────────────────────────────
-            yield send_event("stage", {"stage": "retrieve", "status": "done", "label": "Retrieval complete"})
-            yield send_event("stage", {"stage": "fusion", "status": "active", "label": "RAG-Fusion merging..."})
-            fused_nodes = rag_fusion(all_result_lists)
-            diverse_nodes = enforce_source_diversity(fused_nodes)
-            yield send_event("stage", {"stage": "fusion", "status": "done", "label": f"Fused → {len(fused_nodes)} unique chunks"})
-
-            # ── STAGE 5: Rerank ───────────────────────────────
-            yield send_event("stage", {"stage": "rerank", "status": "active", "label": "Reranking chunks..."})
-            reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
-            yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
-
-            # ── STAGE 6: Compress ─────────────────────────────
-            yield send_event("stage", {"stage": "compress", "status": "active", "label": "Compressing context..."})
-            raw_context = format_context(reranked)
-            compressed_context = await loop.run_in_executor(
-                None, compress_context, question, raw_context, fast_llm
-            )
-            yield send_event("stage", {"stage": "compress", "status": "done", "label": "Context compressed"})
-
-            # ── STAGE 7: CRAG Gate ────────────────────────────
-            yield send_event("stage", {"stage": "crag", "status": "active", "label": "CRAG sufficiency check..."})
-            crag_ok = await loop.run_in_executor(
-                None, crag_gate, question, compressed_context, fast_llm
-            )
-            if crag_ok:
-                yield send_event("stage", {"stage": "crag", "status": "done", "label": "Context sufficient ✓"})
-                source_type = "docs"
-            else:
-                yield send_event("stage", {"stage": "crag", "status": "done", "label": "Insufficient — web fallback triggered"})
-                yield send_event("stage", {"stage": "web", "status": "active", "label": "Searching the web..."})
-                web_ctx = await loop.run_in_executor(
-                    None, web_fallback, question, compressed_context
-                )
-                if web_ctx:
-                    compressed_context = web_ctx
-                    source_type = "web+docs"
-                else:
-                    source_type = "docs_partial"
-                yield send_event("stage", {"stage": "web", "status": "done", "label": "Web fallback complete"})
-
-            # ── STAGE 8: Generate (STREAMING) ─────────────────
-            yield send_event("stage", {"stage": "generate", "status": "active", "label": "Generating answer..."})
-
-            gen_prompt = (
-                "You are a precise, factual assistant. Answer the question using ONLY "
-                "the provided context.\n"
-                "If the answer cannot be found in the context, reply: "
-                "'The provided documents do not contain this information.'\n\n"
-                f"Context:\n{compressed_context}\n\n"
-                f"Question: {question}\n\nAnswer:"
-            )
-
-            # Try streaming first, fall back to non-streaming
-            draft_tokens = []
-            try:
-                stream_resp = final_llm.stream_complete(gen_prompt)
-                for chunk in stream_resp:
-                    token = chunk.delta
-                    if token:
-                        draft_tokens.append(token)
-                        yield send_event("token", {"token": token})
-                        await asyncio.sleep(0)  # yield control for SSE flush
-            except Exception:
-                # Fallback: non-streaming generation
-                draft = await loop.run_in_executor(
-                    None, final_generate, question, compressed_context, final_llm
-                )
-                draft_tokens = [draft]
-                # Send in small chunks to simulate streaming
-                words = draft.split(" ")
-                for i in range(0, len(words), 3):
-                    chunk_text = " ".join(words[i:i+3])
-                    if i > 0:
-                        chunk_text = " " + chunk_text
-                    yield send_event("token", {"token": chunk_text})
-                    await asyncio.sleep(0.02)
-
-            draft_answer = "".join(draft_tokens)
-            yield send_event("stage", {"stage": "generate", "status": "done", "label": "Generation complete"})
-
-            # ── STAGE 9: Self-Critique ────────────────────────
-            yield send_event("stage", {"stage": "critique", "status": "active", "label": "Self-critique..."})
-            final_answer = await loop.run_in_executor(
-                None, self_critique, question, draft_answer, compressed_context, fast_llm
-            )
-
-            # If critique changed the answer, send the corrected version
-            if final_answer != draft_answer:
-                yield send_event("correction", {"corrected_answer": final_answer})
-
-            yield send_event("stage", {"stage": "critique", "status": "done", "label": "Self-critique passed"})
-
-            # ── Build sources ─────────────────────────────────
-            sources = []
-            for n in reranked:
-                meta = n.node.metadata
-                sources.append({
-                    "file": meta.get("file_name", "unknown"),
-                    "page": str(meta.get("page_label", "?")),
-                    "score": round(n.score, 3) if n.score else None
-                })
-
-            yield send_event("sources", {"sources": sources})
-            yield send_event("meta", {
-                "source_type": source_type,
-                "chunks_retrieved": len(fused_nodes),
-                "chunks_after_rerank": len(reranked),
-                "sub_queries": sub_queries,
-            })
-
-            # ── Save assistant message ────────────────────────
+            # ── Save user message ─────────────────────────────────
+            now = datetime.now().isoformat()
             history = _load_history()
-            if conversation_id in history:
-                history[conversation_id]["messages"].append({
-                    "role": "assistant",
-                    "content": final_answer,
-                    "timestamp": datetime.now().isoformat(),
-                    "sources": sources,
-                    "meta": {
-                        "source_type": source_type,
-                        "chunks_retrieved": len(fused_nodes),
-                        "chunks_after_rerank": len(reranked),
-                    }
+            if conversation_id not in history:
+                history[conversation_id] = {
+                    "title": question[:60] + ("..." if len(question) > 60 else ""),
+                    "created": now,
+                    "updated": now,
+                    "messages": []
+                }
+            history[conversation_id]["messages"].append({
+                "role": "user",
+                "content": question,
+                "timestamp": now,
+            })
+            history[conversation_id]["updated"] = now
+            _save_history(history)
+    
+            yield send_event("conversation_id", {"conversation_id": conversation_id})
+    
+            try:
+                # ── STAGE 1: Decompose ────────────────────────────
+                yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
+                loop = asyncio.get_event_loop()
+                sub_queries = await loop.run_in_executor(None, decompose_query, question, fast_llm)
+                yield send_event("stage", {"stage": "decompose", "status": "done", "label": f"Split into {len(sub_queries)} sub-queries"})
+                yield send_event("sub_queries", {"sub_queries": sub_queries})
+    
+                # ── STAGE 2: HyDE ─────────────────────────────────
+                yield send_event("stage", {"stage": "hyde", "status": "active", "label": "Expanding with HyDE..."})
+                hyde_queries = {}
+                with ThreadPoolExecutor(max_workers=len(sub_queries)) as ex:
+                    futures = {ex.submit(hyde_expand, q, fast_llm): q for q in sub_queries}
+                    for future in as_completed(futures):
+                        q = futures[future]
+                        try:
+                            hyde_queries[q] = future.result()
+                        except Exception:
+                            hyde_queries[q] = q
+                yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
+    
+                # ── STAGE 3: Retrieve ─────────────────────────────
+                yield send_event("stage", {"stage": "retrieve", "status": "active", "label": "Hybrid retrieval..."})
+                all_result_lists = []
+                for q in sub_queries:
+                    hyde_q = hyde_queries[q]
+                    hyde_res, orig_res, bm25_res = await loop.run_in_executor(
+                        None, hybrid_retrieve_single, q, hyde_q, index, nodes_store
+                    )
+                    all_result_lists.extend([hyde_res, orig_res, bm25_res])
+    
+                # ── STAGE 4: Fusion ───────────────────────────────
+                yield send_event("stage", {"stage": "retrieve", "status": "done", "label": "Retrieval complete"})
+                yield send_event("stage", {"stage": "fusion", "status": "active", "label": "RAG-Fusion merging..."})
+                fused_nodes = rag_fusion(all_result_lists)
+                diverse_nodes = enforce_source_diversity(fused_nodes)
+                yield send_event("stage", {"stage": "fusion", "status": "done", "label": f"Fused → {len(fused_nodes)} unique chunks"})
+    
+                # ── STAGE 5: Rerank ───────────────────────────────
+                yield send_event("stage", {"stage": "rerank", "status": "active", "label": "Reranking chunks..."})
+                reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
+                yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
+    
+                # ── STAGE 6: Compress ─────────────────────────────
+                yield send_event("stage", {"stage": "compress", "status": "active", "label": "Compressing context..."})
+                raw_context = format_context(reranked)
+                compressed_context = await loop.run_in_executor(
+                    None, compress_context, question, raw_context, fast_llm
+                )
+                yield send_event("stage", {"stage": "compress", "status": "done", "label": "Context compressed"})
+    
+                # ── STAGE 7: CRAG Gate ────────────────────────────
+                yield send_event("stage", {"stage": "crag", "status": "active", "label": "CRAG sufficiency check..."})
+                crag_ok = await loop.run_in_executor(
+                    None, crag_gate, question, compressed_context, fast_llm
+                )
+                if crag_ok:
+                    yield send_event("stage", {"stage": "crag", "status": "done", "label": "Context sufficient ✓"})
+                    source_type = "docs"
+                else:
+                    yield send_event("stage", {"stage": "crag", "status": "done", "label": "Insufficient — web fallback triggered"})
+                    yield send_event("stage", {"stage": "web", "status": "active", "label": "Searching the web..."})
+                    web_ctx = await loop.run_in_executor(
+                        None, web_fallback, question, compressed_context
+                    )
+                    if web_ctx:
+                        compressed_context = web_ctx
+                        source_type = "web+docs"
+                    else:
+                        source_type = "docs_partial"
+                    yield send_event("stage", {"stage": "web", "status": "done", "label": "Web fallback complete"})
+    
+                # ── STAGE 8: Generate (STREAMING) ─────────────────
+                yield send_event("stage", {"stage": "generate", "status": "active", "label": "Generating answer..."})
+    
+                gen_prompt = (
+                    "You are a precise, factual assistant. Answer the question using ONLY "
+                    "the provided context.\n"
+                    "If the answer cannot be found in the context, reply: "
+                    "'The provided documents do not contain this information.'\n\n"
+                    f"Context:\n{compressed_context}\n\n"
+                    f"Question: {question}\n\nAnswer:"
+                )
+    
+                # Try streaming first, fall back to non-streaming
+                draft_tokens = []
+                try:
+                    stream_resp = final_llm.stream_complete(gen_prompt)
+                    for chunk in stream_resp:
+                        token = chunk.delta
+                        if token:
+                            draft_tokens.append(token)
+                            yield send_event("token", {"token": token})
+                            await asyncio.sleep(0)  # yield control for SSE flush
+                except Exception:
+                    # Fallback: non-streaming generation
+                    draft = await loop.run_in_executor(
+                        None, final_generate, question, compressed_context, final_llm
+                    )
+                    draft_tokens = [draft]
+                    # Send in small chunks to simulate streaming
+                    words = draft.split(" ")
+                    for i in range(0, len(words), 3):
+                        chunk_text = " ".join(words[i:i+3])
+                        if i > 0:
+                            chunk_text = " " + chunk_text
+                        yield send_event("token", {"token": chunk_text})
+                        await asyncio.sleep(0.02)
+    
+                draft_answer = "".join(draft_tokens)
+                yield send_event("stage", {"stage": "generate", "status": "done", "label": "Generation complete"})
+    
+                # ── STAGE 9: Self-Critique ────────────────────────
+                yield send_event("stage", {"stage": "critique", "status": "active", "label": "Self-critique..."})
+                final_answer = await loop.run_in_executor(
+                    None, self_critique, question, draft_answer, compressed_context, fast_llm
+                )
+    
+                # If critique changed the answer, send the corrected version
+                if final_answer != draft_answer:
+                    yield send_event("correction", {"corrected_answer": final_answer})
+    
+                yield send_event("stage", {"stage": "critique", "status": "done", "label": "Self-critique passed"})
+    
+                # ── Build sources ─────────────────────────────────
+                sources = []
+                for n in reranked:
+                    meta = n.node.metadata
+                    sources.append({
+                        "file": meta.get("file_name", "unknown"),
+                        "page": str(meta.get("page_label", "?")),
+                        "score": round(n.score, 3) if n.score else None
+                    })
+    
+                yield send_event("sources", {"sources": sources})
+                yield send_event("meta", {
+                    "source_type": source_type,
+                    "chunks_retrieved": len(fused_nodes),
+                    "chunks_after_rerank": len(reranked),
+                    "sub_queries": sub_queries,
                 })
-                history[conversation_id]["updated"] = datetime.now().isoformat()
-                _save_history(history)
-
-            yield send_event("done", {"status": "complete"})
-
-        except Exception as e:
-            print(f"Query pipeline failed: {type(e).__name__}: {e}")
-            traceback.print_exc()
-            yield send_event("error", {"message": str(e)})
+    
+                # ── Save assistant message ────────────────────────
+                history = _load_history()
+                if conversation_id in history:
+                    history[conversation_id]["messages"].append({
+                        "role": "assistant",
+                        "content": final_answer,
+                        "timestamp": datetime.now().isoformat(),
+                        "sources": sources,
+                        "meta": {
+                            "source_type": source_type,
+                            "chunks_retrieved": len(fused_nodes),
+                            "chunks_after_rerank": len(reranked),
+                        }
+                    })
+                    history[conversation_id]["updated"] = datetime.now().isoformat()
+                    _save_history(history)
+    
+                yield send_event("done", {"status": "complete"})
+    
+            except Exception as e:
+                print(f"Query pipeline failed: {type(e).__name__}: {e}")
+                traceback.print_exc()
+                yield send_event("error", {"message": str(e)})
+    
+        finally:
+            QUERY_LIMITER.release()
 
     return StreamingResponse(
         event_stream(),
@@ -505,7 +508,6 @@ async def query_endpoint(request: Request):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
-        background=BackgroundTask(QUERY_LIMITER.release),
     )
 
 
