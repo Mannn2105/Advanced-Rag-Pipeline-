@@ -124,6 +124,13 @@ def build_index(nodes: list, qdrant_dir: str | Path | None = None) -> None:
         storage = StorageContext.from_defaults(vector_store=store)
         VectorStoreIndex(nodes, storage_context=storage, show_progress=True)
 
+        indexed_points = client.count(
+            collection_name=config.COLLECTION_NAME,
+            exact=True,
+        ).count
+        if indexed_points <= 0:
+            raise RuntimeError("Staged Qdrant collection contains no indexed points")
+
         node_path = target_dir / "nodes.pkl"
         temp_nodes = node_path.with_suffix(".tmp")
         with temp_nodes.open("wb") as stream:
