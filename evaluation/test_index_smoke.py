@@ -17,6 +17,21 @@ class IndexSmokeTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "nodes.pkl"):
                 run_smoke(Path(temporary), Path("questions.jsonl"))
 
+    def test_invalid_question_schema_fails_before_model_initialization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            index_dir = root / "index"
+            index_dir.mkdir()
+            with (index_dir / "nodes.pkl").open("wb") as stream:
+                pickle.dump([{"placeholder": True}], stream)
+            questions = root / "questions.jsonl"
+            questions.write_text(
+                json.dumps({"test_id": "q1", "question": "A question"}) + "\\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "expected_source_files"):
+                run_smoke(index_dir, questions)
+
     def test_smoke_report_measures_retrieved_source_recall_without_answer_llms(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
