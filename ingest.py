@@ -1,8 +1,8 @@
 """Document ingestion for the Advanced RAG Pipeline.
 
-Supported input types are PDF, DOCX, TXT, Markdown and CSV. The process writes
-a node catalogue, a versioned Qdrant collection and a manifest. Index files
-are built in a new collection before the manifest is atomically replaced.
+Supported input types are PDF, DOCX, TXT, Markdown and CSV. A complete index is
+built in a sibling staging directory before it is atomically promoted. The
+previous index directory is retained as a rollback backup after promotion.
 """
 import os
 os.environ.setdefault("USE_TF", "0")
