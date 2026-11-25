@@ -18,6 +18,7 @@ from pipeline import (
     enforce_source_diversity,
     _sentences,
     format_context,
+    compress_context,
 )
 from ingest import promote_staged_index
 from scripts.migrate_qdrant_volume import migrate_volume
@@ -87,6 +88,27 @@ class RetrievalUtilityTests(unittest.TestCase):
         self.assertIn("[SOURCE: notes.md | PAGE: ?]", context)
         self.assertIn("Evidence from the first page.", context)
         self.assertIn("Evidence from another source.", context)
+
+
+    def test_context_compression_always_keeps_source_headers(self):
+        class LowScoreEncoder:
+            def predict(self, pairs):
+                return [-1.0] * len(pairs)
+
+        paragraphs = [
+            f"Sentence {index} contains supporting detail and additional explanatory text."
+            for index in range(30)
+        ]
+        raw_context = (
+            "[SOURCE: first.pdf | PAGE: 1]\n"
+            + "\n".join(paragraphs[:15])
+            + "\n[SOURCE: second.pdf | PAGE: 7]\n"
+            + "\n".join(paragraphs[15:])
+        )
+        with mock.patch("pipeline._get_cross_encoder", return_value=LowScoreEncoder()):
+            compressed = compress_context("the question", raw_context)
+        self.assertIn("[SOURCE: first.pdf | PAGE: 1]", compressed)
+        self.assertIn("[SOURCE: second.pdf | PAGE: 7]", compressed)
 
 
     def test_sentence_extraction_ignores_empty_fragments(self):
