@@ -123,8 +123,12 @@ def main() -> int:
     parser.add_argument(
         "--index-dir",
         type=Path,
-        default=Path(config.QDRANT_DIR),
-        help="Existing Qdrant directory (default: configured QDRANT_DIR).",
+        required=True,
+        help=(
+            "Explicit path to an existing disposable Qdrant evaluation index. "
+            "This argument is required to avoid accidentally opening the app's "
+            "configured or production-mounted index."
+        ),
     )
     parser.add_argument(
         "--questions",
