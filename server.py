@@ -545,6 +545,7 @@ async def query_endpoint(request: Request):
                     "chunks_after_rerank": len(reranked),
                     "sub_queries": sub_queries,
                     "request_id": request_id,
+                    "total_duration_ms": round((time.perf_counter() - query_started) * 1000, 2),
                     "stage_timings_ms": stage_timings_ms,
                 })
     
