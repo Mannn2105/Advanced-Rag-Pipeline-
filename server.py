@@ -39,7 +39,7 @@ from pipeline import (
     decompose_query, hyde_expand, hybrid_retrieve_single,
     rag_fusion, enforce_source_diversity, rerank,
     compress_context, crag_gate, web_fallback,
-    final_generate, self_critique
+    final_generate, self_critique, format_context
 )
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -346,7 +346,7 @@ async def query_endpoint(request: Request):
 
             # ── STAGE 6: Compress ─────────────────────────────
             yield send_event("stage", {"stage": "compress", "status": "active", "label": "Compressing context..."})
-            raw_context = "\n\n---\n\n".join([n.node.text for n in reranked])
+            raw_context = format_context(reranked)
             compressed_context = await loop.run_in_executor(
                 None, compress_context, question, raw_context, fast_llm
             )
