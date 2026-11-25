@@ -1,6 +1,6 @@
 """Tests for bounded and well-formed RAG query requests."""
 import unittest
-from request_validation import _positive_int, validate_query_payload
+from request_validation import _positive_int, validate_conversation_id, validate_query_payload
 
 
 class QueryPayloadValidationTests(unittest.TestCase):
@@ -28,10 +28,21 @@ class QueryPayloadValidationTests(unittest.TestCase):
             validate_query_payload({"question": "x" * 4001})
 
     def test_rejects_invalid_conversation_id(self):
-        for value in ("", " ", 42, "x" * 129):
+        for value in ("", " ", 42, "x" * 129, "not-a-uuid", "';alert(1)//"):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, "Conversation ID"):
                     validate_query_payload({"question": "hello", "conversation_id": value})
+
+    def test_accepts_and_normalizes_uuid_conversation_id(self):
+        raw_id = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
+        self.assertEqual(
+            validate_conversation_id(raw_id),
+            "a0b1c2d3-e4f5-4678-9abc-def012345678",
+        )
+
+    def test_query_payload_rejects_non_uuid_conversation_id(self):
+        with self.assertRaisesRegex(ValueError, "valid UUID"):
+            validate_query_payload({"question": "hello", "conversation_id": "legacy-id"})
 
     def test_positive_integer_setting_uses_default_when_unset(self):
         self.assertEqual(_positive_int(None, "MAX_QUESTION_CHARS", 4000), 4000)
