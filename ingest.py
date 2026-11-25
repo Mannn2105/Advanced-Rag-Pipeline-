@@ -177,6 +177,20 @@ def promote_staged_index(staging_dir: str | Path, target_dir: str | Path) -> Pat
         raise ValueError("Staging and active index directories must share a parent filesystem")
     if not staging.is_dir():
         raise FileNotFoundError(f"Staged index directory does not exist: {staging}")
+
+    # A volume mounted exactly at target_dir is a filesystem boundary. Matching
+    # parent paths do not prove that rename is atomic or even permitted there.
+    staging_device = os.stat(staging).st_dev
+    target_device_path = target if target.exists() else target.parent
+    target_device = os.stat(target_device_path).st_dev
+    if staging_device != target_device:
+        raise OSError(
+            "Staged and active Qdrant directories are on different filesystems. "
+            "Mount the persistent volume at a parent directory (for example "
+            "/app/data) and set QDRANT_DIR to a child directory "
+            "(for example /app/data/qdrant_db) before using staged promotion."
+        )
+
     backup = None
     if target.exists():
         backup = target.with_name(f"{target.name}.backup-{int(time.time())}-{uuid.uuid4().hex[:8]}")
