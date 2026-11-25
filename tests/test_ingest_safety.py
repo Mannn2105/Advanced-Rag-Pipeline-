@@ -109,7 +109,10 @@ class IngestionFlowTests(unittest.TestCase):
                     for document in documents
                 ]
 
+            indexed_metadata = []
+
             def build(nodes, qdrant_dir):
+                indexed_metadata.extend(dict(node.metadata) for node in nodes)
                 Path(qdrant_dir, "new-index.marker").write_text(
                     str(len(nodes)), encoding="utf-8"
                 )
@@ -130,6 +133,10 @@ class IngestionFlowTests(unittest.TestCase):
             self.assertEqual(result["documents"], 4)
             self.assertEqual(result["chunks"], 4)
             self.assertEqual(result["warnings"], [])
+            self.assertEqual(
+                {metadata["file_name"] for metadata in indexed_metadata},
+                {path.name for path in source_files},
+            )
             self.assertTrue((active / "new-index.marker").is_file())
             self.assertEqual((active / "new-index.marker").read_text(), "4")
             self.assertEqual(
