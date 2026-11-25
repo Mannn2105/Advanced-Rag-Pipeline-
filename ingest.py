@@ -101,14 +101,15 @@ def enrich_nodes(nodes: list, documents_by_name: dict, llm=None) -> list:
 
 def build_index(nodes: list, qdrant_dir: str | Path | None = None) -> None:
     """Build a complete index in the supplied directory without touching the active index."""
+    # Reject empty input before importing heavyweight indexing dependencies.
+    if not nodes:
+        raise ValueError("No chunks were produced; refusing to create an empty index")
+
     from llama_index.core import StorageContext, VectorStoreIndex, Settings
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     from llama_index.vector_stores.qdrant import QdrantVectorStore
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, VectorParams
-
-    if not nodes:
-        raise ValueError("No chunks were produced; refusing to create an empty index")
     target_dir = Path(qdrant_dir or config.QDRANT_DIR)
     target_dir.mkdir(parents=True, exist_ok=True)
 
