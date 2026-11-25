@@ -112,13 +112,41 @@ Retrieval unit tests exercise reciprocal-rank fusion, duplicate removal, per-sou
 
 ## Real-index retrieval smoke evaluator
 
-After installing the full pinned requirements and creating a **disposable local Qdrant index**, run:
+### Build and evaluate a disposable local index
 
-```bash
-python -m evaluation.run_index_smoke --index-dir ./qdrant_db --k 5 --output ./evaluation/index-smoke-report.json
+Install the full pinned requirements first. Then, from the repository root, create a **new, unused directory** for the evaluation index. Do not reuse the default `qdrant_db` directory or any directory mounted by a running application.
+
+**Windows PowerShell:**
+
+```powershell
+$env:QDRANT_DIR = ".\\qdrant_eval_db"
+$env:RAG_ENABLE_CONTEXTUAL_ENRICHMENT = "false"
+
+if (Test-Path $env:QDRANT_DIR) {
+    throw "Evaluation directory already exists. Choose a new empty path; do not overwrite it."
+}
+
+python ingest.py
+if ($LASTEXITCODE -ne 0) { throw "Disposable index ingestion failed." }
+
+python -m evaluation.run_index_smoke --index-dir $env:QDRANT_DIR --k 5 --output .\\evaluation\\index-smoke-report.json
+if ($LASTEXITCODE -ne 0) { throw "Retrieval smoke evaluation failed." }
 ```
 
-The evaluator initializes the configured Hugging Face embedding model, loads the Qdrant collection and BM25 `nodes.pkl` snapshot, and runs the ten labelled questions through vector retrieval, BM25, reciprocal-rank fusion, and source-diversity filtering. It reports source-file precision/recall, MRR, NDCG, and per-question missing source files. It does not call Groq/OpenRouter, generate answers, or score factual answer quality.
+**macOS / Linux:**
 
-Run it only against a disposable local index or a separately provisioned test environment. Do not point it at the live Railway volume: opening the same local Qdrant storage while the service is running can conflict with the application's active database handle. Stop any local process using the test index before running the evaluator.
+```bash
+export QDRANT_DIR="./qdrant_eval_db"
+export RAG_ENABLE_CONTEXTUAL_ENRICHMENT="false"
+
+test ! -e "$QDRANT_DIR" || { echo "Choose a new, unused evaluation directory"; exit 1; }
+python ingest.py &&
+python -m evaluation.run_index_smoke --index-dir "$QDRANT_DIR" --k 5 --output ./evaluation/index-smoke-report.json
+```
+
+The explicit `RAG_ENABLE_CONTEXTUAL_ENRICHMENT=false` setting keeps ingestion from calling the optional Groq enrichment model. Ingestion still downloads/loads the configured Hugging Face embedding model and builds a real local Qdrant collection plus the BM25 `nodes.pkl` snapshot. The evaluator then loads that same directory and runs the ten labelled questions through vector retrieval, BM25, reciprocal-rank fusion, and source-diversity filtering. It reports source-file precision/recall, MRR, NDCG, and per-question missing source files. It does not call Groq/OpenRouter, generate answers, or score factual answer quality.
+
+The smoke dataset's `expected_facts` fields are reference notes only; the current evaluator scores expected source-file retrieval, not fact-level correctness. Review the generated JSON report before drawing conclusions about semantic answer quality.
+
+Use only a new disposable local directory or a separately provisioned test environment. Do not point either command at the live Railway volume or an index currently opened by another process. The ingestion command promotes its staged index into `QDRANT_DIR`; the guard above prevents it from replacing an existing directory.
 
