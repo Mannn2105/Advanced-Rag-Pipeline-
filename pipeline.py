@@ -284,6 +284,18 @@ def _source_records(nodes: list) -> list[dict]:
         })
     return records
 
+def format_context(nodes: list) -> str:
+    """Format retrieved chunks with source metadata for evidence-grounded generation."""
+    blocks = []
+    for hit in nodes:
+        node = hit.node
+        metadata = getattr(node, "metadata", {}) or {}
+        source = metadata.get("file_name") or metadata.get("source") or "unknown"
+        page = metadata.get("page_label", "?")
+        blocks.append(f"[SOURCE: {source} | PAGE: {page}]\n{node.text}")
+    return "\n\n---\n\n".join(blocks)
+
+
 def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> dict:
     """Execute decomposition, hybrid retrieval, fusion, reranking and grounded QA."""
     if not query or not query.strip():
@@ -309,11 +321,7 @@ def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> d
     fused = rag_fusion(ranked_lists)
     diversified = enforce_source_diversity(fused)
     selected = rerank(query, diversified)
-    context = "\n\n".join(
-        f"[SOURCE: {node.node.metadata.get('file_name', 'unknown')} | PAGE: "
-        f"{node.node.metadata.get('page_label', '?')}]\n{node.node.text}"
-        for node in selected
-    )
+    context = format_context(selected)
     compact_context = compress_context(query, context, fast_llm)
     enough_evidence = crag_gate(query, compact_context, fast_llm) if compact_context else False
     source_type = "docs" if enough_evidence else "docs_insufficient"
