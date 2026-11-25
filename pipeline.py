@@ -61,15 +61,19 @@ def init_models():
     Settings.llm = answer_llm
     return _embedding, fast_llm, answer_llm
 
-def load_index():
-    """Open the configured persistent Qdrant collection and wrap it as an index."""
+def load_index(qdrant_dir=None):
+    """Open a persistent Qdrant collection and wrap it as an index.
+
+    qdrant_dir allows offline tools to target an explicit disposable index
+    without changing the application's configured runtime directory.
+    """
     from llama_index.core import StorageContext, VectorStoreIndex
     from llama_index.vector_stores.qdrant import QdrantVectorStore
     from qdrant_client import QdrantClient
 
     global _qdrant_client
     if _qdrant_client is None:
-        _qdrant_client = QdrantClient(path=config.QDRANT_DIR)
+        _qdrant_client = QdrantClient(path=str(qdrant_dir or config.QDRANT_DIR))
     collections = {item.name for item in _qdrant_client.get_collections().collections}
     if config.COLLECTION_NAME not in collections:
         raise RuntimeError(
