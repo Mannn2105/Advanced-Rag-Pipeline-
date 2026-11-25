@@ -132,6 +132,33 @@ class IngestionPromotionTests(unittest.TestCase):
             self.assertEqual((backup / "index.txt").read_text(encoding="utf-8"), "old index")
             self.assertFalse(staging.exists())
 
+    def test_promotion_rejects_different_filesystems_without_touching_active_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "qdrant_db"
+            staging = root / "qdrant_db.staging"
+            active.mkdir()
+            staging.mkdir()
+            (active / "index.txt").write_text("known-good index", encoding="utf-8")
+            (staging / "index.txt").write_text("candidate index", encoding="utf-8")
+            real_stat = os.stat
+
+            def different_devices(path, *args, **kwargs):
+                result = real_stat(path, *args, **kwargs)
+                resolved = Path(path)
+                values = list(result)
+                if resolved == staging:
+                    values[2] = result.st_dev + 1
+                    return os.stat_result(values)
+                return result
+
+            with mock.patch("ingest.os.stat", side_effect=different_devices):
+                with self.assertRaisesRegex(OSError, "different filesystems"):
+                    promote_staged_index(staging, active)
+
+            self.assertEqual((active / "index.txt").read_text(encoding="utf-8"), "known-good index")
+            self.assertEqual((staging / "index.txt").read_text(encoding="utf-8"), "candidate index")
+
     def test_promotion_rejects_missing_staging_without_touching_active_index(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
