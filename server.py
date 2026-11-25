@@ -32,6 +32,8 @@ from auth import basic_auth_valid
 from request_validation import validate_query_payload
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.background import BackgroundTask
+from query_limiter import MAX_CONCURRENT_QUERIES, QueryConcurrencyLimiter
 import uvicorn
 
 import config
@@ -47,6 +49,7 @@ from collections import defaultdict
 
 # ── App Setup ─────────────────────────────────────────────────
 app = FastAPI(title="RAG Pipeline UI", version="2.0")
+QUERY_LIMITER = QueryConcurrencyLimiter(MAX_CONCURRENT_QUERIES)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ALLOWED_ORIGINS,
@@ -280,6 +283,12 @@ async def query_endpoint(request: Request):
         return JSONResponse(status_code=400, content={"error": str(exc)})
     if not MODELS_LOADED:
         return JSONResponse(status_code=503, content={"error": "Models not loaded yet"})
+    if not QUERY_LIMITER.try_acquire():
+        return JSONResponse(
+            status_code=429,
+            content={"error": "The query service is busy. Please retry shortly."},
+            headers={"Retry-After": "2"},
+        )
 
     async def event_stream():
         def send_event(event_type: str, data: dict) -> str:
@@ -478,7 +487,8 @@ async def query_endpoint(request: Request):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-        }
+        },
+        background=BackgroundTask(QUERY_LIMITER.release),
     )
 
 
