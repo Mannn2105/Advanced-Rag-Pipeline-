@@ -85,3 +85,14 @@ The Groq and OpenRouter LLM clients are configured with an upstream request time
 The query concurrency slot is released from the SSE async generator's `finally` block. Normal completion, a pipeline exception, or client-side stream cancellation therefore runs the same cleanup path once the generator is closed. This is preferable to relying only on a response background task.
 
 **Remaining limitation:** this is not a hard end-to-end query deadline. Local CPU-bound embedding/reranking work and any upstream integration whose SDK does not use the configured LLM timeout can still take longer. Cancelling an asyncio task also cannot forcibly stop work already executing in a Python worker thread. A strict total deadline would require cooperative cancellation or isolated worker processes with enforceable termination.
+
+## Query observability
+
+The FastAPI query stream emits structured JSON log records through the `rag.observability` logger. Each query receives a random request ID so stage events can be correlated without logging the user's question, generated answer, document text, or credentials.
+
+Successful stage records include the stage name and elapsed milliseconds. Failed stages include the exception type and elapsed milliseconds, while query-level records include total elapsed time, retrieval/rerank chunk counts, and the selected source type. The SSE `meta` event and saved assistant-message metadata also include the request ID and per-stage timings.
+
+HyDE and retrieval timings are accumulated across their individual worker calls; because those operations may overlap, their summed durations are not necessarily equal to wall-clock stage time. Generation timing includes streaming and any non-streaming fallback. These measurements are diagnostic telemetry, not a hard timeout or a performance guarantee.
+
+Keep application log access restricted and configure retention in the hosting platform. The existing query error response and traceback behavior are unchanged; review logs before using this service with sensitive documents.
+
