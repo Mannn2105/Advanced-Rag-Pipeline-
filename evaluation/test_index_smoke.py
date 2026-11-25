@@ -33,6 +33,30 @@ class IndexSmokeTests(unittest.TestCase):
                 run_smoke(index_dir, questions)
 
 
+    def test_duplicate_test_ids_fail_before_model_initialization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            index_dir = root / "index"
+            index_dir.mkdir()
+            with (index_dir / "nodes.pkl").open("wb") as stream:
+                pickle.dump([{"placeholder": True}], stream)
+            questions = root / "questions.jsonl"
+            row = {
+                "test_id": "duplicate",
+                "question": "A question",
+                "expected_source_files": ["PROJECT_GUIDE.md"],
+            }
+            questions.write_text(
+                json.dumps(row) + "\\n" + json.dumps(row) + "\\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "llama_index.embeddings.huggingface.HuggingFaceEmbedding"
+            ) as embedding_model:
+                with self.assertRaisesRegex(ValueError, "Duplicate test_id"):
+                    run_smoke(index_dir, questions)
+                embedding_model.assert_not_called()
+
     def test_does_not_close_qdrant_client_owned_by_caller(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
