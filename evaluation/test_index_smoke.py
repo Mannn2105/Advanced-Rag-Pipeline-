@@ -77,9 +77,8 @@ class IndexSmokeTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(RuntimeError, "Different Qdrant directory"):
                     run_smoke(index_dir, questions)
-
-            existing_client.close.assert_not_called()
-            self.assertIs(pipeline._qdrant_client, existing_client)
+                existing_client.close.assert_not_called()
+                self.assertIs(pipeline._qdrant_client, existing_client)
 
     def test_smoke_report_measures_retrieved_source_recall_without_answer_llms(self):
         with tempfile.TemporaryDirectory() as temporary:
