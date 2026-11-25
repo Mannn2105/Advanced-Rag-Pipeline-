@@ -1,6 +1,11 @@
 name: Real-index retrieval smoke evaluation
 
 on:
+  push:
+    branches:
+      - integration/clean-rag-review
+    paths:
+      - ".github/workflows/real-index-smoke.yml"
   workflow_dispatch:
 
 permissions:
