@@ -20,13 +20,13 @@ The current `server.py` applies a server-side HTTP Basic authentication gate to 
 
 **Required action:** retain a restrictive origin allowlist, but implement real server-side authentication and authorization independently.
 
-### 3. No visible request throttling or query budget
+### 3. Request controls are partial; rate limits and query budgets remain missing
 
-The reviewed query route does not show rate limiting, per-user quotas, or a request budget.
+The query route now validates JSON shape, requires a non-empty question, caps question length (default 4,000 characters via `MAX_QUESTION_CHARS`), and limits simultaneous query streams (default 2 via `MAX_CONCURRENT_QUERIES`). Requests above the concurrency cap receive HTTP 429 with `Retry-After: 2`.
 
-**Risk:** abuse or accidental loops can consume provider credits and server resources.
+**Limitations:** the concurrency guard is process-local, not shared across multiple workers or replicas. It is not a per-IP or per-user rate limiter, does not impose a provider-spend budget, and does not yet enforce an end-to-end query timeout.
 
-**Required action:** add rate limits, maximum question length, request timeouts, concurrency limits, and provider spending alerts/quotas.
+**Required action:** add distributed or gateway-level rate limits, per-user quotas after individual identity is implemented, request timeouts, and provider spending alerts/quotas.
 
 ### 4. Conversation data needs access controls
 
@@ -59,6 +59,10 @@ Treat the service as a development/demo environment until the checklist is addre
 
 This review is a prioritized engineering checklist, not legal, compliance, or penetration-test advice.
 
+
+## Query input and concurrency controls
+
+`request_validation.py` rejects malformed query payloads, trims and bounds the question, and validates conversation IDs. The default question limit is 4,000 characters and can be changed with `MAX_QUESTION_CHARS` (must be a positive integer). `query_limiter.py` caps simultaneous expensive query streams at 2 per application process by default; configure `MAX_CONCURRENT_QUERIES` with a positive integer. Requests over the cap receive HTTP 429 and a short `Retry-After` hint. The cap is process-local, so multi-worker or multi-replica deployments need a shared limiter or gateway control. These controls are not a substitute for per-user/IP rate limiting or spend quotas.
 
 ## Implemented access gate (single shared account)
 
