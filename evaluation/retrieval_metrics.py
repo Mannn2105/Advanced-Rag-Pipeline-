@@ -27,9 +27,10 @@ def _unique_in_order(values: Iterable[str]) -> list[str]:
 
 
 def precision_at_k(relevant: set[str], ranked: list[str], k: int) -> float:
-    """Fraction of the first k ranked results that are relevant."""
+    """Fraction of the first k unique ranked results that are relevant."""
     if k < 1:
         raise ValueError("k must be at least 1.")
+    ranked = _unique_in_order(ranked)
     return sum(doc_id in relevant for doc_id in ranked[:k]) / k
 
 
@@ -39,11 +40,13 @@ def recall_at_k(relevant: set[str], ranked: list[str], k: int) -> float:
         raise ValueError("k must be at least 1.")
     if not relevant:
         return 0.0
+    ranked = _unique_in_order(ranked)
     return len(relevant.intersection(ranked[:k])) / len(relevant)
 
 
 def reciprocal_rank(relevant: set[str], ranked: list[str]) -> float:
-    """Reciprocal rank of the first relevant result (zero if none is found)."""
+    """Reciprocal rank of the first relevant unique result (zero if none is found)."""
+    ranked = _unique_in_order(ranked)
     for rank, doc_id in enumerate(ranked, start=1):
         if doc_id in relevant:
             return 1.0 / rank
@@ -54,6 +57,7 @@ def ndcg_at_k(relevant: set[str], ranked: list[str], k: int) -> float:
     """Binary-relevance normalized discounted cumulative gain at k."""
     if k < 1:
         raise ValueError("k must be at least 1.")
+    ranked = _unique_in_order(ranked)
     dcg = sum(
         1.0 / math.log2(rank + 1)
         for rank, doc_id in enumerate(ranked[:k], start=1)
@@ -144,7 +148,7 @@ def main() -> int:
         parser.error(str(exc))
     rendered = json.dumps(report, indent=2, ensure_ascii=False)
     if args.output:
-        args.output.write_text(rendered + "\n", encoding="utf-8")
+        args.output.write_text(rendered + "\\n", encoding="utf-8")
     print(rendered)
     return 0
 
