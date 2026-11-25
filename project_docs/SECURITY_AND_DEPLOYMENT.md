@@ -71,3 +71,8 @@ The application now has a server-side HTTP Basic authentication gate for the lan
 For Railway, set both variables in the service's Variables panel using long, unique values. Use the app only over its HTTPS Railway domain. The browser should prompt for credentials when opening the protected page. Do not put these values in source control, chat, or frontend code.
 
 **Scope limitation:** this is a single shared login, not individual user accounts. It does not provide per-user conversation ownership or isolation, and the current JSON conversation store remains shared by anyone with the shared login. It is a basic access barrier for a private demo, not a production multi-tenant security architecture. Keep the service private and do not put sensitive documents into it until owner-scoped storage, stronger identity management, rate limiting, and operational controls are implemented.
+
+
+## Conversation identifier hardening
+
+Conversation IDs accepted by query requests and history read/delete/rename routes must now parse as UUIDs. IDs are normalized to the canonical lowercase UUID representation before use. This prevents arbitrary client-controlled strings from being used as conversation path identifiers and keeps IDs safe for the current sidebar's inline event-handler interpolation. This is input hardening only: it does **not** establish conversation ownership or isolate users. Existing non-UUID legacy IDs, if any, will need a deliberate migration before this validation is enabled in an environment that contains them.
