@@ -102,3 +102,11 @@ The index builder rejects an empty chunk list before importing optional indexing
 
 These unit tests exercise filesystem promotion behavior with temporary directories; they do not replace a full ingestion run against the deployment's persistent volume or a live Qdrant index.
 
+## Offline ingestion and retrieval regression coverage
+
+The CI suite includes a deterministic four-file Markdown corpus check. It exercises file discovery, mocked parsing/chunking, source-filename propagation into the index-builder boundary, staged directory promotion, backup retention, and preservation of the shared chat-history and enrichment-cache files. A separate check validates all ten smoke-question source references against the demo corpus.
+
+Retrieval unit tests exercise reciprocal-rank fusion, duplicate removal, per-source diversity limits, and filename/page provenance in formatted context and returned source records. These tests use synthetic nodes and do not load embedding models, connect to Qdrant, call external LLM providers, or measure semantic retrieval quality.
+
+**Still required before a live release:** run the real parser dependencies against representative PDF/DOCX/TXT/CSV/Markdown files; build a disposable Qdrant index with the configured embedding model; verify the indexed point count and BM25 snapshot; execute the ten smoke questions against that index; inspect source/page attribution and unsupported-answer behavior; then run an authenticated query against the deployment. Keep production data untouched during this validation.
+
