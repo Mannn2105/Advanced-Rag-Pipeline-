@@ -8,6 +8,7 @@ on:
     paths:
       - "evaluation/**"
       - "tests/**"
+      - "tests.py"
       - "auth.py"
       - "server.py"
       - "config.py"
