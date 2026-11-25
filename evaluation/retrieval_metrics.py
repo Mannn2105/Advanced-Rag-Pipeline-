@@ -148,7 +148,7 @@ def main() -> int:
         parser.error(str(exc))
     rendered = json.dumps(report, indent=2, ensure_ascii=False)
     if args.output:
-        args.output.write_text(rendered + "\\n", encoding="utf-8")
+        args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
     return 0
 
