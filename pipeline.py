@@ -197,6 +197,12 @@ def compress_context(query: str, raw_context: str, fast_llm=None) -> str:
         scores = _get_cross_encoder().predict([(query, sentence) for sentence in sentences])
         ranked = sorted(range(len(sentences)), key=lambda idx: float(scores[idx]), reverse=True)
         keep = set(ranked[:config.COMPRESS_TOP_K])
+        # Source headers are provenance metadata, not ordinary prose. Preserve
+        # them even when the relevance model scores them below the text cutoff.
+        keep.update(
+            idx for idx, sentence in enumerate(sentences)
+            if sentence.startswith("[SOURCE:")
+        )
         keep.update(idx for idx, score in enumerate(scores) if float(score) >= config.COMPRESS_SCORE_THRESHOLD)
         compressed = "\n".join(sentences[idx] for idx in sorted(keep))
         return compressed if len(compressed) >= 100 else raw_context
