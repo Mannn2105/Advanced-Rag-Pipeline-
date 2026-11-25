@@ -29,6 +29,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request
 from auth import basic_auth_valid
+from request_validation import validate_query_payload
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -268,12 +269,15 @@ async def rename_conversation(conversation_id: str, request: Request):
 # ── SSE Query Endpoint ────────────────────────────────────────
 @app.post("/api/query")
 async def query_endpoint(request: Request):
-    body = await request.json()
-    question = body.get("question", "").strip()
-    conversation_id = body.get("conversation_id", str(uuid.uuid4()))
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Request body must be valid JSON"})
 
-    if not question:
-        return JSONResponse(status_code=400, content={"error": "Empty question"})
+    try:
+        question, conversation_id = validate_query_payload(body)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     if not MODELS_LOADED:
         return JSONResponse(status_code=503, content={"error": "Models not loaded yet"})
 
