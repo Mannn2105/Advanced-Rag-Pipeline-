@@ -31,11 +31,11 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = "openai/gpt-oss-20b"  # current Groq replacement for HyDE/CRAG/critique
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # 384-dim model; matches the existing persistent Qdrant index
 EMBED_DIMENSION = int(os.getenv("EMBED_DIMENSION", "384"))
 EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "2"))
 CROSS_ENCODER_MODEL = os.getenv("CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
