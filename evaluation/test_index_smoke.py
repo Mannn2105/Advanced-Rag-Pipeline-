@@ -47,7 +47,7 @@ class IndexSmokeTests(unittest.TestCase):
                 "expected_source_files": ["PROJECT_GUIDE.md"],
             }
             questions.write_text(
-                json.dumps(row) + "\\n" + json.dumps(row) + "\\n",
+                json.dumps(row) + "\n" + json.dumps(row) + "\n",
                 encoding="utf-8",
             )
             core = ModuleType("llama_index.core")
