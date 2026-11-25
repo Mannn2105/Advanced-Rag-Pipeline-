@@ -17,6 +17,7 @@ from pipeline import (
     rag_fusion,
     enforce_source_diversity,
     _sentences,
+    format_context,
 )
 from ingest import promote_staged_index
 from scripts.migrate_qdrant_volume import migrate_volume
@@ -70,6 +71,23 @@ class RetrievalUtilityTests(unittest.TestCase):
         ]
         selected = enforce_source_diversity(hits, max_per_file=1)
         self.assertEqual([item.node.node_id for item in selected], ["a", "c"])
+
+    def test_context_formatter_preserves_source_and_page_metadata(self):
+        hits = [
+            _Hit(_Node("chunk-1", "Evidence from the first page.", {
+                "file_name": "guide.pdf",
+                "page_label": "3",
+            })),
+            _Hit(_Node("chunk-2", "Evidence from another source.", {
+                "source": "notes.md",
+            })),
+        ]
+        context = format_context(hits)
+        self.assertIn("[SOURCE: guide.pdf | PAGE: 3]", context)
+        self.assertIn("[SOURCE: notes.md | PAGE: ?]", context)
+        self.assertIn("Evidence from the first page.", context)
+        self.assertIn("Evidence from another source.", context)
+
 
     def test_sentence_extraction_ignores_empty_fragments(self):
         self.assertEqual(_sentences("First sentence.\n\nSecond sentence!"), ["First sentence.", "Second sentence!"])
