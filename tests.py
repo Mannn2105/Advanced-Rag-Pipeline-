@@ -19,6 +19,7 @@ from pipeline import (
     _sentences,
 )
 from ingest import promote_staged_index
+from scripts.migrate_qdrant_volume import migrate_volume
 
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").casefold()).strip()
@@ -193,6 +194,48 @@ class IngestionPromotionTests(unittest.TestCase):
 
             self.assertEqual((active / "index.txt").read_text(encoding="utf-8"), "known-good index")
             self.assertTrue(staging.is_dir())
+
+
+class VolumeMigrationTests(unittest.TestCase):
+    def _volume(self, root):
+        (root / "nodes.pkl").write_bytes(b"node catalogue")
+        (root / "embedding_config.json").write_text(
+            json.dumps({"model": config.EMBED_MODEL, "dimension": config.EMBED_DIMENSION}),
+            encoding="utf-8",
+        )
+        (root / "collection_data").mkdir()
+        (root / "collection_data" / "segment.bin").write_bytes(b"qdrant data")
+
+    def test_dry_run_does_not_move_volume_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._volume(root)
+            planned = migrate_volume(root)
+            self.assertEqual({path.name for path in planned}, {
+                "nodes.pkl", "embedding_config.json", "collection_data"
+            })
+            self.assertTrue((root / "nodes.pkl").is_file())
+            self.assertFalse((root / "active").exists())
+
+    def test_migration_requires_explicit_stopped_service_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._volume(root)
+            with self.assertRaisesRegex(RuntimeError, "Stop the application"):
+                migrate_volume(root, apply=True)
+            self.assertTrue((root / "nodes.pkl").is_file())
+
+    def test_confirmed_migration_moves_all_index_files_into_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._volume(root)
+            moved = migrate_volume(root, apply=True, service_stopped=True)
+            active = root / "active"
+            self.assertEqual(len(moved), 3)
+            self.assertTrue((active / "nodes.pkl").is_file())
+            self.assertTrue((active / "embedding_config.json").is_file())
+            self.assertTrue((active / "collection_data" / "segment.bin").is_file())
+            self.assertEqual(list(root.iterdir()), [active])
 
 
 class AnswerScoringTests(unittest.TestCase):
