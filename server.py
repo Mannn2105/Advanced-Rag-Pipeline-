@@ -19,6 +19,7 @@ os.environ["TRANSFORMERS_NO_TF"] = "1"
 import json
 import uuid
 import time
+import logging
 import pickle
 import asyncio
 import traceback
@@ -95,6 +96,33 @@ index = None
 nodes_store = None
 
 CHAT_HISTORY_PATH = os.path.join(config.QDRANT_DIR, "chat_history.json")
+OBSERVABILITY_LOGGER = logging.getLogger("rag.observability")
+
+
+def _run_observed(stage: str, request_id: str, function, *args):
+    """Run one synchronous stage and emit privacy-safe structured timing logs."""
+    started = time.perf_counter()
+    try:
+        result = function(*args)
+    except Exception as exc:
+        OBSERVABILITY_LOGGER.info(json.dumps({
+            "event": "rag_stage_failed",
+            "request_id": request_id,
+            "stage": stage,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            "error_type": type(exc).__name__,
+        }, sort_keys=True))
+        raise
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    OBSERVABILITY_LOGGER.info(json.dumps({
+        "event": "rag_stage_completed",
+        "request_id": request_id,
+        "stage": stage,
+        "duration_ms": duration_ms,
+    }, sort_keys=True))
+    return result, duration_ms
+
+
 
 
 # ── Chat History Helpers ──────────────────────────────────────
@@ -306,7 +334,12 @@ async def query_endpoint(request: Request):
             headers={"Retry-After": "2"},
         )
 
+    request_id = uuid.uuid4().hex
+
     async def event_stream():
+        query_started = time.perf_counter()
+        stage_timings_ms = {}
+
         def send_event(event_type: str, data: dict) -> str:
             return f"data: {json.dumps({'type': event_type, **data})}\n\n"
 
@@ -335,7 +368,9 @@ async def query_endpoint(request: Request):
                 # ── STAGE 1: Decompose ────────────────────────────
                 yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
                 loop = asyncio.get_event_loop()
-                sub_queries = await loop.run_in_executor(None, decompose_query, question, fast_llm)
+                sub_queries, stage_timings_ms["decompose"] = await loop.run_in_executor(
+                    None, _run_observed, "decompose", request_id, decompose_query, question, fast_llm
+                )
                 yield send_event("stage", {"stage": "decompose", "status": "done", "label": f"Split into {len(sub_queries)} sub-queries"})
                 yield send_event("sub_queries", {"sub_queries": sub_queries})
     
@@ -343,11 +378,17 @@ async def query_endpoint(request: Request):
                 yield send_event("stage", {"stage": "hyde", "status": "active", "label": "Expanding with HyDE..."})
                 hyde_queries = {}
                 with ThreadPoolExecutor(max_workers=len(sub_queries)) as ex:
-                    futures = {ex.submit(hyde_expand, q, fast_llm): q for q in sub_queries}
+                    futures = {
+                        ex.submit(_run_observed, "hyde", request_id, hyde_expand, q, fast_llm): q
+                        for q in sub_queries
+                    }
                     for future in as_completed(futures):
                         q = futures[future]
                         try:
-                            hyde_queries[q] = future.result()
+                            hyde_queries[q], hyde_duration = future.result()
+                            stage_timings_ms["hyde"] = round(
+                                stage_timings_ms.get("hyde", 0.0) + hyde_duration, 2
+                            )
                         except Exception:
                             hyde_queries[q] = q
                 yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
@@ -357,35 +398,47 @@ async def query_endpoint(request: Request):
                 all_result_lists = []
                 for q in sub_queries:
                     hyde_q = hyde_queries[q]
-                    hyde_res, orig_res, bm25_res = await loop.run_in_executor(
-                        None, hybrid_retrieve_single, q, hyde_q, index, nodes_store
+                    (hyde_res, orig_res, bm25_res), retrieve_duration = await loop.run_in_executor(
+                        None, _run_observed, "retrieve", request_id,
+                        hybrid_retrieve_single, q, hyde_q, index, nodes_store
+                    )
+                    stage_timings_ms["retrieve"] = round(
+                        stage_timings_ms.get("retrieve", 0.0) + retrieve_duration, 2
                     )
                     all_result_lists.extend([hyde_res, orig_res, bm25_res])
     
                 # ── STAGE 4: Fusion ───────────────────────────────
                 yield send_event("stage", {"stage": "retrieve", "status": "done", "label": "Retrieval complete"})
                 yield send_event("stage", {"stage": "fusion", "status": "active", "label": "RAG-Fusion merging..."})
-                fused_nodes = rag_fusion(all_result_lists)
-                diverse_nodes = enforce_source_diversity(fused_nodes)
+                fused_nodes, stage_timings_ms["fusion"] = _run_observed(
+                    "fusion", request_id, rag_fusion, all_result_lists
+                )
+                diverse_nodes, stage_timings_ms["source_diversity"] = _run_observed(
+                    "source_diversity", request_id, enforce_source_diversity, fused_nodes
+                )
                 yield send_event("stage", {"stage": "fusion", "status": "done", "label": f"Fused → {len(fused_nodes)} unique chunks"})
     
                 # ── STAGE 5: Rerank ───────────────────────────────
                 yield send_event("stage", {"stage": "rerank", "status": "active", "label": "Reranking chunks..."})
-                reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
+                reranked, stage_timings_ms["rerank"] = await loop.run_in_executor(
+                    None, _run_observed, "rerank", request_id, rerank, question, diverse_nodes
+                )
                 yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
     
                 # ── STAGE 6: Compress ─────────────────────────────
                 yield send_event("stage", {"stage": "compress", "status": "active", "label": "Compressing context..."})
                 raw_context = format_context(reranked)
-                compressed_context = await loop.run_in_executor(
-                    None, compress_context, question, raw_context, fast_llm
+                compressed_context, stage_timings_ms["compress"] = await loop.run_in_executor(
+                    None, _run_observed, "compress", request_id,
+                    compress_context, question, raw_context, fast_llm
                 )
                 yield send_event("stage", {"stage": "compress", "status": "done", "label": "Context compressed"})
     
                 # ── STAGE 7: CRAG Gate ────────────────────────────
                 yield send_event("stage", {"stage": "crag", "status": "active", "label": "CRAG sufficiency check..."})
-                crag_ok = await loop.run_in_executor(
-                    None, crag_gate, question, compressed_context, fast_llm
+                crag_ok, stage_timings_ms["crag"] = await loop.run_in_executor(
+                    None, _run_observed, "crag", request_id,
+                    crag_gate, question, compressed_context, fast_llm
                 )
                 if crag_ok:
                     yield send_event("stage", {"stage": "crag", "status": "done", "label": "Context sufficient ✓"})
@@ -393,8 +446,9 @@ async def query_endpoint(request: Request):
                 else:
                     yield send_event("stage", {"stage": "crag", "status": "done", "label": "Insufficient — web fallback triggered"})
                     yield send_event("stage", {"stage": "web", "status": "active", "label": "Searching the web..."})
-                    web_ctx = await loop.run_in_executor(
-                        None, web_fallback, question, compressed_context
+                    web_ctx, stage_timings_ms["web_fallback"] = await loop.run_in_executor(
+                        None, _run_observed, "web_fallback", request_id,
+                        web_fallback, question, compressed_context
                     )
                     if web_ctx:
                         compressed_context = web_ctx
@@ -418,6 +472,7 @@ async def query_endpoint(request: Request):
                 # Try streaming first, fall back to non-streaming
                 draft_tokens = []
                 try:
+                    generation_started = time.perf_counter()
                     stream_resp = final_llm.stream_complete(gen_prompt)
                     for chunk in stream_resp:
                         token = chunk.delta
@@ -440,13 +495,24 @@ async def query_endpoint(request: Request):
                         yield send_event("token", {"token": chunk_text})
                         await asyncio.sleep(0.02)
     
+                if "generate" not in stage_timings_ms:
+                    stage_timings_ms["generate"] = round(
+                        (time.perf_counter() - generation_started) * 1000, 2
+                    ) if "generation_started" in locals() else 0.0
+                    OBSERVABILITY_LOGGER.info(json.dumps({
+                        "event": "rag_stage_completed",
+                        "request_id": request_id,
+                        "stage": "generate",
+                        "duration_ms": stage_timings_ms["generate"],
+                    }, sort_keys=True))
                 draft_answer = "".join(draft_tokens)
                 yield send_event("stage", {"stage": "generate", "status": "done", "label": "Generation complete"})
     
                 # ── STAGE 9: Self-Critique ────────────────────────
                 yield send_event("stage", {"stage": "critique", "status": "active", "label": "Self-critique..."})
-                final_answer = await loop.run_in_executor(
-                    None, self_critique, question, draft_answer, compressed_context, fast_llm
+                final_answer, stage_timings_ms["critique"] = await loop.run_in_executor(
+                    None, _run_observed, "critique", request_id,
+                    self_critique, question, draft_answer, compressed_context, fast_llm
                 )
     
                 # If critique changed the answer, send the corrected version
@@ -471,6 +537,8 @@ async def query_endpoint(request: Request):
                     "chunks_retrieved": len(fused_nodes),
                     "chunks_after_rerank": len(reranked),
                     "sub_queries": sub_queries,
+                    "request_id": request_id,
+                    "stage_timings_ms": stage_timings_ms,
                 })
     
                 # ── Save assistant message ────────────────────────
@@ -485,14 +553,29 @@ async def query_endpoint(request: Request):
                             "source_type": source_type,
                             "chunks_retrieved": len(fused_nodes),
                             "chunks_after_rerank": len(reranked),
+                            "stage_timings_ms": stage_timings_ms,
                         }
                     })
                     history[conversation_id]["updated"] = datetime.now().isoformat()
                     _save_history(history)
     
+                OBSERVABILITY_LOGGER.info(json.dumps({
+                    "event": "rag_query_completed",
+                    "request_id": request_id,
+                    "total_duration_ms": round((time.perf_counter() - query_started) * 1000, 2),
+                    "chunks_retrieved": len(fused_nodes),
+                    "chunks_after_rerank": len(reranked),
+                    "source_type": source_type,
+                }, sort_keys=True))
                 yield send_event("done", {"status": "complete"})
     
             except Exception as e:
+                OBSERVABILITY_LOGGER.exception(json.dumps({
+                    "event": "rag_query_failed",
+                    "request_id": request_id,
+                    "error_type": type(e).__name__,
+                    "total_duration_ms": round((time.perf_counter() - query_started) * 1000, 2),
+                }, sort_keys=True))
                 print(f"Query pipeline failed: {type(e).__name__}: {e}")
                 traceback.print_exc()
                 yield send_event("error", {"message": str(e)})
