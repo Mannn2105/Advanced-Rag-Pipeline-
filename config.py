@@ -9,6 +9,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _positive_float_env(name: str, default: float) -> float:
+    """Read a positive timeout value from the environment."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive number") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive number")
+    return value
+
+
 def _csv_env(name: str, default: str) -> list[str]:
     return [part.strip() for part in os.getenv(name, default).split(",") if part.strip()]
 
@@ -34,6 +48,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GROQ_MODEL     = "openai/gpt-oss-20b"   # current Groq replacement for HyDE/CRAG/critique
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+RAG_LLM_TIMEOUT_SECONDS = _positive_float_env("RAG_LLM_TIMEOUT_SECONDS", 60.0)
 
 EMBED_MODEL    = "BAAI/bge-small-en-v1.5"  # 384-dim model; matches the existing persistent Qdrant index
 EMBED_DIMENSION = int(os.getenv("EMBED_DIMENSION", "384"))
