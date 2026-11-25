@@ -4,6 +4,7 @@ All deployment-specific values are read from environment variables. No API
 credentials are stored in source control.
 """
 import os
+import math
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -18,7 +19,7 @@ def _positive_float_env(name: str, default: float) -> float:
         value = float(raw)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be a positive number") from exc
-    if value <= 0:
+    if not math.isfinite(value) or value <= 0:
         raise ValueError(f"{name} must be a positive number")
     return value
 
