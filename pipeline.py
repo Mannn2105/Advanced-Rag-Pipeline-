@@ -11,6 +11,7 @@ os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from rich.console import Console
 
 import config
@@ -19,6 +20,7 @@ console = Console()
 _embedding = None
 _cross_encoder = None
 _qdrant_client = None
+_qdrant_dir = None
 
 def log(stage: str, message: str, color: str = "cyan") -> None:
     if config.VERBOSE:
@@ -67,13 +69,21 @@ def load_index(qdrant_dir=None):
     qdrant_dir allows offline tools to target an explicit disposable index
     without changing the application's configured runtime directory.
     """
+    global _qdrant_client, _qdrant_dir
+    requested_dir = str(Path(qdrant_dir or config.QDRANT_DIR).resolve())
+    if _qdrant_client is not None and _qdrant_dir != requested_dir:
+        raise RuntimeError(
+            "A Qdrant client is already open for a different directory. "
+            "Close the existing client before opening another index."
+        )
+
     from llama_index.core import StorageContext, VectorStoreIndex
     from llama_index.vector_stores.qdrant import QdrantVectorStore
     from qdrant_client import QdrantClient
 
-    global _qdrant_client
     if _qdrant_client is None:
-        _qdrant_client = QdrantClient(path=str(qdrant_dir or config.QDRANT_DIR))
+        _qdrant_client = QdrantClient(path=requested_dir)
+        _qdrant_dir = requested_dir
     collections = {item.name for item in _qdrant_client.get_collections().collections}
     if config.COLLECTION_NAME not in collections:
         raise RuntimeError(
