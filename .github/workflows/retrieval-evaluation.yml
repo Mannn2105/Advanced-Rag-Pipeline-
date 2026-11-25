@@ -1,0 +1,64 @@
+name: Project quality checks
+
+on:
+  push:
+    branches:
+      - main
+      - improvement/provenance-and-quality-review
+    paths:
+      - "evaluation/**"
+      - "tests/**"
+      - "tests.py"
+      - "auth.py"
+      - "server.py"
+      - "config.py"
+      - "ingest.py"
+      - "pipeline.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/retrieval-evaluation.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "evaluation/**"
+      - "tests/**"
+      - "auth.py"
+      - "server.py"
+      - "config.py"
+      - "ingest.py"
+      - "pipeline.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/retrieval-evaluation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-evaluation:
+    name: Auth and retrieval tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lightweight test dependencies
+        run: python -m pip install --disable-pip-version-check rich python-dotenv
+
+      - name: Run authentication unit tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Run core retrieval utility tests
+        run: python tests.py
+
+      - name: Run evaluator unit tests
+        run: python -m unittest discover -s evaluation -p "test_*.py" -v
+
+      - name: Run sample dataset smoke test
+        run: python evaluation/retrieval_metrics.py evaluation/sample_dataset.jsonl --k 5
