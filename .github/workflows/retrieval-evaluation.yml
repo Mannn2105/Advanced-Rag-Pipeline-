@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - improvement/provenance-and-quality-review
+      - integration/clean-rag-review
     paths:
       - "evaluation/**"
       - "tests/**"
