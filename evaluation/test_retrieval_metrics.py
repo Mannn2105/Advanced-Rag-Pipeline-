@@ -35,6 +35,14 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertAlmostEqual(report["macro_average"]["recall@3"], 1.0)
         self.assertAlmostEqual(report["macro_average"]["precision@3"], 2 / 3)
 
+    def test_metric_helpers_also_ignore_duplicate_ranked_documents(self):
+        relevant = {"a"}
+        ranked = ["a", "a", "b"]
+        self.assertAlmostEqual(precision_at_k(relevant, ranked, 3), 1 / 3)
+        self.assertAlmostEqual(recall_at_k(relevant, ranked, 3), 1.0)
+        self.assertAlmostEqual(reciprocal_rank(relevant, ranked), 1.0)
+        self.assertAlmostEqual(ndcg_at_k(relevant, ranked, 3), 1.0)
+
     def test_empty_relevant_set_returns_zero(self):
         report = evaluate_records([{
             "query_id": "q1",
