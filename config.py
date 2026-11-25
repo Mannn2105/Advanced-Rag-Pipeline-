@@ -24,7 +24,7 @@ def contextual_enrichment_enabled(environ=None) -> bool:
     env = os.environ if environ is None else environ
     if "RAG_ENABLE_CONTEXTUAL_ENRICHMENT" in env:
         return _env_bool(env.get("RAG_ENABLE_CONTEXTUAL_ENRICHMENT"))
-    return not _env_bool(env.get("RAG_SKIP_CONTEXTUAL_ENRICHMENT"), False)
+    return not _env_bool(env.get("RAG_SKIP_CONTEXTUAL_ENRICHMENT"), True)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
