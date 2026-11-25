@@ -76,6 +76,23 @@ class RetrievalUtilityTests(unittest.TestCase):
     def test_config_has_valid_chunk_dimensions(self):
         self.assertEqual(config.validate_runtime(), [])
 
+    def test_legacy_skip_flag_disables_contextual_enrichment(self):
+        self.assertFalse(config.contextual_enrichment_enabled({
+            "RAG_SKIP_CONTEXTUAL_ENRICHMENT": "true"
+        }))
+
+    def test_new_enrichment_flag_overrides_legacy_skip_flag(self):
+        self.assertTrue(config.contextual_enrichment_enabled({
+            "RAG_SKIP_CONTEXTUAL_ENRICHMENT": "true",
+            "RAG_ENABLE_CONTEXTUAL_ENRICHMENT": "yes",
+        }))
+
+    def test_contextual_enrichment_defaults_to_disabled(self):
+        self.assertFalse(config.contextual_enrichment_enabled({}))
+
+    def test_simple_chunking_defaults_to_enabled(self):
+        self.assertTrue(config._env_bool(None, True))
+
     def test_manifest_accepts_ingestion_metadata(self):
         manifest = {
             "model": config.EMBED_MODEL,
