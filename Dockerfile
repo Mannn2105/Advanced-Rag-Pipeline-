@@ -21,4 +21,4 @@ RUN python -m pip install --upgrade pip && \
 COPY . .
 
 EXPOSE 8000
-CMD ["sh", "-c", "if [ ! -f /app/qdrant_db/nodes.pkl ]; then python ingest.py; fi; uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
