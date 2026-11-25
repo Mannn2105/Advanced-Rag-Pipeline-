@@ -12,6 +12,20 @@ load_dotenv()
 def _csv_env(name: str, default: str) -> list[str]:
     return [part.strip() for part in os.getenv(name, default).split(",") if part.strip()]
 
+
+def _env_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def contextual_enrichment_enabled(environ=None) -> bool:
+    """Honor the current flag, falling back to the legacy inverse skip flag."""
+    env = os.environ if environ is None else environ
+    if "RAG_ENABLE_CONTEXTUAL_ENRICHMENT" in env:
+        return _env_bool(env.get("RAG_ENABLE_CONTEXTUAL_ENRICHMENT"))
+    return not _env_bool(env.get("RAG_SKIP_CONTEXTUAL_ENRICHMENT"), False)
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
@@ -38,6 +52,8 @@ COMPRESS_TOP_K = int(os.getenv("COMPRESS_TOP_K", "25"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "512"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "80"))
 ENRICH_DELAY_SECONDS = float(os.getenv("ENRICH_DELAY_SECONDS", "1.2"))
+RAG_ENABLE_CONTEXTUAL_ENRICHMENT = contextual_enrichment_enabled()
+RAG_SIMPLE_CHUNKING = _env_bool(os.getenv("RAG_SIMPLE_CHUNKING"), True)
 MAX_WEB_RESULTS = int(os.getenv("MAX_WEB_RESULTS", "3"))
 VERBOSE = os.getenv("VERBOSE", "true").lower() in {"1", "true", "yes", "on"}
 
