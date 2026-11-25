@@ -12,6 +12,7 @@ on:
       - "tests.py"
       - "auth.py"
       - "server.py"
+      - "app.html"
       - "config.py"
       - "ingest.py"
       - "pipeline.py"
@@ -27,6 +28,7 @@ on:
       - "tests.py"
       - "auth.py"
       - "server.py"
+      - "app.html"
       - "config.py"
       - "ingest.py"
       - "pipeline.py"
@@ -56,6 +58,19 @@ jobs:
       - name: Import FastAPI application
         run: python -c "import asyncio, server; status = asyncio.run(server.get_status()); assert status['ready'] is False; print('FastAPI application import and initial status passed')"
 
+      - name: Validate frontend JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          html = Path("app.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script\\b[^>]*>([\\s\\S]*?)</script>", html, re.IGNORECASE)
+          if not scripts:
+              raise SystemExit("No inline JavaScript found in app.html")
+          Path("/tmp/app-inline.js").write_text("\\n".join(scripts), encoding="utf-8")
+          PY
+          node --check /tmp/app-inline.js
       - name: Run authentication unit tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
