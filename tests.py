@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import unittest
+import tempfile
 from pathlib import Path
 
 import config
@@ -15,6 +16,7 @@ from pipeline import (
     enforce_source_diversity,
     _sentences,
 )
+from ingest import promote_staged_index
 
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").casefold()).strip()
@@ -91,6 +93,39 @@ class RetrievalUtilityTests(unittest.TestCase):
             "node_count": 29,
         }
         self.assertFalse(config.manifest_matches(manifest))
+
+class IngestionPromotionTests(unittest.TestCase):
+    def test_promotion_keeps_previous_index_as_rollback_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "qdrant_db"
+            staging = root / "qdrant_db.staging"
+            active.mkdir()
+            staging.mkdir()
+            (active / "index.txt").write_text("old index", encoding="utf-8")
+            (staging / "index.txt").write_text("new index", encoding="utf-8")
+
+            backup = promote_staged_index(staging, active)
+
+            self.assertIsNotNone(backup)
+            self.assertEqual((active / "index.txt").read_text(encoding="utf-8"), "new index")
+            self.assertTrue(backup.is_dir())
+            self.assertEqual((backup / "index.txt").read_text(encoding="utf-8"), "old index")
+            self.assertFalse(staging.exists())
+
+    def test_promotion_rejects_missing_staging_without_touching_active_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "qdrant_db"
+            active.mkdir()
+            (active / "index.txt").write_text("known-good index", encoding="utf-8")
+
+            with self.assertRaises(FileNotFoundError):
+                promote_staged_index(root / "missing-staging", active)
+
+            self.assertEqual((active / "index.txt").read_text(encoding="utf-8"), "known-good index")
+            self.assertEqual(sorted(path.name for path in root.iterdir()), ["qdrant_db"])
+
 
 class AnswerScoringTests(unittest.TestCase):
     def test_score_requires_expected_indicators(self):
