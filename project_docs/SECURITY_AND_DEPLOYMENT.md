@@ -76,3 +76,12 @@ For Railway, set both variables in the service's Variables panel using long, uni
 ## Conversation identifier hardening
 
 Conversation IDs accepted by query requests and history read/delete/rename routes must now parse as UUIDs. IDs are normalized to the canonical lowercase UUID representation before use. This prevents arbitrary client-controlled strings from being used as conversation path identifiers and keeps IDs safe for the current sidebar's inline event-handler interpolation. This is input hardening only: it does **not** establish conversation ownership or isolate users. Existing non-UUID legacy IDs, if any, will need a deliberate migration before this validation is enabled in an environment that contains them.
+
+
+## Query execution timeouts and stream cleanup
+
+The Groq and OpenRouter LLM clients are configured with an upstream request timeout using `RAG_LLM_TIMEOUT_SECONDS` (default: 60 seconds). The setting must be a finite positive number. This bounds individual model-provider HTTP requests, including the provider-backed streaming generation request, rather than imposing a single wall-clock deadline across the complete RAG pipeline.
+
+The query concurrency slot is released from the SSE async generator's `finally` block. Normal completion, a pipeline exception, or client-side stream cancellation therefore runs the same cleanup path once the generator is closed. This is preferable to relying only on a response background task.
+
+**Remaining limitation:** this is not a hard end-to-end query deadline. Local CPU-bound embedding/reranking work and any upstream integration whose SDK does not use the configured LLM timeout can still take longer. Cancelling an asyncio task also cannot forcibly stop work already executing in a Python worker thread. A strict total deadline would require cooperative cancellation or isolated worker processes with enforceable termination.
