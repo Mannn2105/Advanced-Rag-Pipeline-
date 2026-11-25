@@ -17,7 +17,17 @@ def _positive_int(raw_value: str | None, name: str, default: int) -> int:
 
 
 MAX_QUESTION_CHARS = _positive_int(os.getenv("MAX_QUESTION_CHARS"), "MAX_QUESTION_CHARS", 4000)
-MAX_CONVERSATION_ID_CHARS = 128
+
+
+def validate_conversation_id(value: object) -> str:
+    """Require a canonical UUID so IDs are safe in routes and UI attributes."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Conversation ID must be a valid UUID")
+    try:
+        parsed = uuid.UUID(value.strip())
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("Conversation ID must be a valid UUID") from exc
+    return str(parsed)
 
 
 def validate_query_payload(payload: object) -> tuple[str, str]:
@@ -40,11 +50,6 @@ def validate_query_payload(payload: object) -> tuple[str, str]:
     conversation_id = payload.get("conversation_id")
     if conversation_id is None:
         conversation_id = str(uuid.uuid4())
-    if not isinstance(conversation_id, str) or not conversation_id.strip():
-        raise ValueError("Conversation ID must be a non-empty string")
-    if len(conversation_id) > MAX_CONVERSATION_ID_CHARS:
-        raise ValueError(
-            f"Conversation ID cannot exceed {MAX_CONVERSATION_ID_CHARS} characters"
-        )
+    conversation_id = validate_conversation_id(conversation_id)
 
     return question, conversation_id
