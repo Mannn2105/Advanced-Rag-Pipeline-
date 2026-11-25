@@ -2,7 +2,21 @@
 import os
 import uuid
 
-MAX_QUESTION_CHARS = int(os.getenv("MAX_QUESTION_CHARS", "4000"))
+
+def _positive_int(raw_value: str | None, name: str, default: int) -> int:
+    """Parse a positive integer environment setting with a clear error."""
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+MAX_QUESTION_CHARS = _positive_int(os.getenv("MAX_QUESTION_CHARS"), "MAX_QUESTION_CHARS", 4000)
 MAX_CONVERSATION_ID_CHARS = 128
 
 
