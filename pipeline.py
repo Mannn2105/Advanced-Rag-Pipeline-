@@ -499,9 +499,12 @@ def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> d
     log("RETRIEVE", "Running hybrid retrieval for all sub-queries...")
     all_result_lists = []
     total_bm25 = 0
+    vector_retriever, bm25_retriever = build_hybrid_retrievers(index, nodes_store)
     for q in sub_queries:
         hyde_q = hyde_queries[q]
-        hyde_res, orig_res, bm25_res = hybrid_retrieve_single(q, hyde_q, index, nodes_store)
+        hyde_res, orig_res, bm25_res = hybrid_retrieve_single(
+            q, hyde_q, index, nodes_store, vector_retriever, bm25_retriever
+        )
         all_result_lists.extend([hyde_res, orig_res, bm25_res])
         total_bm25 += len(bm25_res)
 
