@@ -8,6 +8,8 @@ on:
       - integration/clean-rag-review
     paths:
       - "evaluation/**"
+      - "docs/**"
+      - "project_docs/**"
       - "tests/**"
       - "tests.py"
       - "auth.py"
@@ -24,6 +26,8 @@ on:
       - main
     paths:
       - "evaluation/**"
+      - "docs/**"
+      - "project_docs/**"
       - "tests/**"
       - "tests.py"
       - "auth.py"
