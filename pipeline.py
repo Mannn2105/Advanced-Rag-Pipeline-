@@ -30,6 +30,7 @@ from qdrant_client import QdrantClient
 
 import config
 from retrieval_utils import normalize_hyde_query
+from rerank_utils import local_cross_encoder_rerank
 
 console = Console()
 
@@ -206,14 +207,9 @@ def rerank(query: str, nodes: list) -> list:
         log("RERANK", "COHERE_API_KEY is not configured; using local cross-encoder.", "yellow")
 
     ce = _get_cross_encoder()
-    pairs = [(query, item.node.text) for item in nodes]
-    scores = ce.predict(pairs, show_progress_bar=False)
-    reranked = sorted(
-        zip(nodes, scores),
-        key=lambda pair: float(pair[1]),
-        reverse=True,
-    )[:config.RERANK_TOP_N]
-    selected = [item for item, _ in reranked]
+    selected = local_cross_encoder_rerank(
+        nodes, query, ce, config.RERANK_TOP_N
+    )
     log("RERANK", f"Local cross-encoder selected top {len(selected)} chunks ✓", "green")
     return selected
 
