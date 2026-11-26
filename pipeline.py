@@ -29,6 +29,7 @@ from llama_index.vector_stores.qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 
 import config
+from retrieval_utils import normalize_hyde_query
 
 console = Console()
 
@@ -130,6 +131,8 @@ def hyde_expand(query: str, fast_llm) -> str:
 # ── STEP 3: Hybrid Retrieval (Vector + BM25) ─────────────────
 # Retrieves with BOTH HyDE query AND original query for dual coverage
 def hybrid_retrieve_single(query: str, hyde_query: str, index, nodes_store: list) -> list:
+    query = normalize_hyde_query(query, query)
+    hyde_query = normalize_hyde_query(hyde_query, query)
     vector_retriever = index.as_retriever(similarity_top_k=config.VECTOR_TOP_K)
 
     # Dual retrieval: HyDE query + original query (Fix #1)
@@ -429,7 +432,7 @@ def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> d
         for future in as_completed(futures):
             q = futures[future]
             try:
-                hyde_queries[q] = future.result()
+                hyde_queries[q] = normalize_hyde_query(future.result(), q)
             except Exception:
                 hyde_queries[q] = q  # fallback to original if HyDE fails
     log("HyDE", f"HyDE expansion complete ✓", "green")
