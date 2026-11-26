@@ -44,7 +44,10 @@ from collections import defaultdict
 from conversation_utils import resolve_conversation_id
 from retrieval_utils import normalize_hyde_query
 from generation_utils import normalize_generated_answer
-from document_utils import (\n    build_document_catalog, get_reconstructed_document, build_document_diagnostics,\n    recovered_download_details, build_recovered_documents_zip,\n)
+from document_utils import (
+    build_document_catalog, get_reconstructed_document, build_document_diagnostics,
+    recovered_download_details, build_recovered_documents_zip,
+)
 from urllib.parse import quote
 
 # ── App Setup ─────────────────────────────────────────────────
