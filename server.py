@@ -43,6 +43,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from conversation_utils import resolve_conversation_id
 from retrieval_utils import normalize_hyde_query
+from generation_utils import normalize_generated_answer
 
 # ── App Setup ─────────────────────────────────────────────────
 app = FastAPI(title="RAG Pipeline UI", version="2.0")
@@ -314,22 +315,37 @@ async def query_endpoint(request: Request):
                         draft_tokens.append(token)
                         yield send_event("token", {"token": token})
                         await asyncio.sleep(0)  # yield control for SSE flush
-            except Exception:
-                # Fallback: non-streaming generation
+            except Exception as stream_error:
+                print(
+                    f"⚠️ Streaming generation failed; using non-streaming fallback: "
+                    f"{type(stream_error).__name__}: {stream_error}",
+                    flush=True,
+                )
                 draft = await loop.run_in_executor(
                     None, final_generate, question, compressed_context, final_llm
                 )
+                draft = normalize_generated_answer(draft)
+                if not draft:
+                    raise RuntimeError("Streaming and fallback generation both returned an empty answer.")
                 draft_tokens = [draft]
-                # Send in small chunks to simulate streaming
-                words = draft.split(" ")
-                for i in range(0, len(words), 3):
-                    chunk_text = " ".join(words[i:i+3])
-                    if i > 0:
-                        chunk_text = " " + chunk_text
-                    yield send_event("token", {"token": chunk_text})
-                    await asyncio.sleep(0.02)
+                # Replace any partial streamed text instead of appending a duplicate answer.
+                yield send_event("correction", {"corrected_answer": draft})
 
-            draft_answer = "".join(draft_tokens)
+            draft_answer = normalize_generated_answer("".join(draft_tokens))
+            if not draft_answer:
+                print(
+                    "⚠️ Streaming generation returned no usable text; retrying with non-streaming generation.",
+                    flush=True,
+                )
+                draft = await loop.run_in_executor(
+                    None, final_generate, question, compressed_context, final_llm
+                )
+                draft_answer = normalize_generated_answer(draft)
+                if not draft_answer:
+                    raise RuntimeError("Streaming and fallback generation both returned an empty answer.")
+                draft_tokens = [draft_answer]
+                yield send_event("correction", {"corrected_answer": draft_answer})
+
             yield send_event("stage", {"stage": "generate", "status": "done", "label": "Generation complete"})
 
             current_stage = "critique"
