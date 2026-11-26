@@ -37,7 +37,7 @@ from pipeline import (
     decompose_query, hyde_expand, hybrid_retrieve_single,
     rag_fusion, enforce_source_diversity, rerank,
     compress_context, crag_gate, web_fallback,
-    final_generate, self_critique
+    final_generate, final_generate_with_fallback, self_critique
 )
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -322,7 +322,7 @@ async def query_endpoint(request: Request):
                     flush=True,
                 )
                 draft = await loop.run_in_executor(
-                    None, final_generate, question, compressed_context, final_llm
+                    None, final_generate_with_fallback, question, compressed_context, final_llm, fast_llm, stream_error
                 )
                 draft = normalize_generated_answer(draft)
                 if not draft:
@@ -338,7 +338,7 @@ async def query_endpoint(request: Request):
                     flush=True,
                 )
                 draft = await loop.run_in_executor(
-                    None, final_generate, question, compressed_context, final_llm
+                    None, final_generate_with_fallback, question, compressed_context, final_llm, fast_llm
                 )
                 draft_answer = normalize_generated_answer(draft)
                 if not draft_answer:
