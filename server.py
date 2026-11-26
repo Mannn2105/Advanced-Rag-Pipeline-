@@ -124,6 +124,11 @@ async def get_status():
     }
 
 
+def _resolve_conversation_id(body: dict) -> str:
+    """Return a usable conversation ID, generating one for missing/null values."""
+    return body.get("conversation_id") or str(uuid.uuid4())
+
+
 # ── Conversation Endpoints ────────────────────────────────────
 @app.get("/api/conversations")
 async def list_conversations():
@@ -179,7 +184,7 @@ async def rename_conversation(conversation_id: str, request: Request):
 async def query_endpoint(request: Request):
     body = await request.json()
     question = body.get("question", "").strip()
-    conversation_id = body.get("conversation_id") or str(uuid.uuid4())
+    conversation_id = _resolve_conversation_id(body)
 
     if not question:
         return JSONResponse(status_code=400, content={"error": "Empty question"})
