@@ -31,6 +31,7 @@ from qdrant_client import QdrantClient
 import config
 from retrieval_utils import normalize_hyde_query
 from rerank_utils import local_cross_encoder_rerank
+from generation_utils import generate_with_fallback
 
 console = Console()
 
@@ -378,6 +379,19 @@ def web_fallback(query: str, doc_context: str = "") -> str:
 
 
 # ── STEP 10: Final Generation ─────────────────────────────────
+def final_generate_with_fallback(query: str, context: str, primary_llm, fallback_llm, primary_error=None) -> str:
+    """Generate with OpenRouter first, then use the already-configured Groq client."""
+    if primary_error is not None:
+        log("GENERATE", f"Primary provider failed ({type(primary_error).__name__}); retrying with Groq fallback.", "yellow")
+    else:
+        log("GENERATE", "Trying primary provider with Groq fallback available...", "yellow")
+    return generate_with_fallback(
+        lambda: final_generate(query, context, primary_llm),
+        lambda: final_generate(query, context, fallback_llm),
+        primary_error=primary_error,
+    )
+
+
 def final_generate(query: str, context: str, final_llm) -> str:
     log("GENERATE", f"Generating answer with {config.OPENROUTER_MODEL.split('/')[-1]}...")
     prompt = (
@@ -486,7 +500,7 @@ def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> d
     log("PARALLEL", "Running CRAG gate + generation in parallel...")
     with ThreadPoolExecutor(max_workers=2) as ex:
         crag_future = ex.submit(crag_gate, query, compressed_context, fast_llm)
-        gen_future  = ex.submit(final_generate, query, compressed_context, final_llm)
+        gen_future  = ex.submit(final_generate_with_fallback, query, compressed_context, final_llm, fast_llm)
         crag_ok = crag_future.result()
         draft   = gen_future.result()
 
@@ -516,7 +530,7 @@ def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> d
         else:
             web_ctx = web_fallback(query, doc_context=compressed_context)
             if web_ctx:
-                draft = final_generate(query, web_ctx, final_llm)
+                draft = final_generate_with_fallback(query, web_ctx, final_llm, fast_llm)
                 compressed_context = web_ctx
                 source_type = "web+docs"
             else:
