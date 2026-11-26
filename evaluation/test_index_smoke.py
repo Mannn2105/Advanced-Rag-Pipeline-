@@ -7,8 +7,21 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+import config
 import pipeline
 from evaluation.run_index_smoke import run_smoke
+
+
+def write_index_manifest(index_dir: Path, **overrides) -> None:
+    manifest = {
+        "model": config.EMBED_MODEL,
+        "dimension": config.EMBED_DIMENSION,
+        "collection": config.COLLECTION_NAME,
+    }
+    manifest.update(overrides)
+    (index_dir / "embedding_config.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
 
 
 class IndexSmokeTests(unittest.TestCase):
@@ -17,6 +30,23 @@ class IndexSmokeTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "nodes.pkl"):
                 run_smoke(Path(temporary), Path("questions.jsonl"))
 
+    def test_missing_embedding_manifest_fails_before_model_initialization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            index_dir = Path(temporary)
+            with (index_dir / "nodes.pkl").open("wb") as stream:
+                pickle.dump([{"placeholder": True}], stream)
+            with self.assertRaisesRegex(RuntimeError, "Embedding manifest"):
+                run_smoke(index_dir, Path("questions.jsonl"))
+
+    def test_incompatible_embedding_manifest_fails_before_model_initialization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            index_dir = Path(temporary)
+            with (index_dir / "nodes.pkl").open("wb") as stream:
+                pickle.dump([{"placeholder": True}], stream)
+            write_index_manifest(index_dir, model="different-embedding-model")
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                run_smoke(index_dir, Path("questions.jsonl"))
+
     def test_invalid_question_schema_fails_before_model_initialization(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -24,6 +54,7 @@ class IndexSmokeTests(unittest.TestCase):
             index_dir.mkdir()
             with (index_dir / "nodes.pkl").open("wb") as stream:
                 pickle.dump([{"placeholder": True}], stream)
+            write_index_manifest(index_dir)
             questions = root / "questions.jsonl"
             questions.write_text(
                 json.dumps({"test_id": "q1", "question": "A question"}) + "\n",
@@ -40,6 +71,7 @@ class IndexSmokeTests(unittest.TestCase):
             index_dir.mkdir()
             with (index_dir / "nodes.pkl").open("wb") as stream:
                 pickle.dump([{"placeholder": True}], stream)
+            write_index_manifest(index_dir)
             questions = root / "questions.jsonl"
             row = {
                 "test_id": "duplicate",
@@ -76,6 +108,7 @@ class IndexSmokeTests(unittest.TestCase):
             index_dir.mkdir()
             with (index_dir / "nodes.pkl").open("wb") as stream:
                 pickle.dump([{"placeholder": True}], stream)
+            write_index_manifest(index_dir)
             questions = root / "questions.jsonl"
             questions.write_text(
                 json.dumps({
@@ -123,6 +156,7 @@ class IndexSmokeTests(unittest.TestCase):
             index_dir.mkdir()
             with (index_dir / "nodes.pkl").open("wb") as stream:
                 pickle.dump([{"placeholder": True}], stream)
+            write_index_manifest(index_dir)
             questions = root / "questions.jsonl"
             questions.write_text(
                 json.dumps({
