@@ -12,10 +12,10 @@ Orchestrated RAG answers questions over a collection of user-provided documents.
 4. **Query preparation** — the query pipeline can decompose a complex question and generate a hypothetical answer (HyDE) to broaden semantic retrieval.
 5. **Hybrid retrieval** — Qdrant vector retrieval and BM25 keyword retrieval produce candidate passages.
 6. **Fusion and diversity** — reciprocal rank fusion combines result lists; a per-file cap reduces the chance that one document dominates the context.
-7. **Reranking** — Cohere reranks candidate passages for the user's original question.
+7. **Reranking** — when a valid `COHERE_API_KEY` is configured, Cohere reranks candidate passages. If the key is missing/placeholder or the Cohere request fails, the pipeline falls back to the local cross-encoder reranker.
 8. **Context compression** — a local cross-encoder scores sentences for relevance and retains a compact context.
 9. **Context sufficiency and fallback** — the pipeline can use Tavily when retrieved document context is judged insufficient.
-10. **Generation and review** — the configured LLM generates a response, followed by a self-critique/review stage.
+10. **Generation and review** — OpenRouter is the preferred answer-generation provider. If its final generation request fails, the application retries with the configured Groq client. The response then passes through the self-critique/review stage.
 11. **Delivery** — the FastAPI server streams the response and source information to the browser client. A terminal query path is also provided.
 
 ## Component map
@@ -35,7 +35,8 @@ Orchestrated RAG answers questions over a collection of user-provided documents.
 - **Hybrid search:** vector retrieval helps with semantic similarity; BM25 can recover exact terms, identifiers, and names.
 - **Reciprocal rank fusion:** merges ranked lists without requiring their raw scores to share a common scale.
 - **Source diversity:** limits repeated chunks from a single file to encourage broader evidence coverage.
-- **Reranking:** spends a more expensive relevance model on a smaller candidate set.
+- **Reranking:** uses Cohere when available and a local cross-encoder fallback when Cohere is not configured or errors. This keeps retrieval usable without depending exclusively on the external reranking API.
+- **Provider resilience:** OpenRouter is preferred for final answer generation; Groq is the fallback when OpenRouter generation fails. Both providers still require valid configuration.
 - **Compression:** reduces prompt context, but aggressive filtering can remove useful evidence. The implementation keeps fallback behavior for very small compressed results.
 - **Web fallback:** may introduce information outside the uploaded corpus. Source attribution and careful review remain important.
 
