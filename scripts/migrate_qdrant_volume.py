@@ -14,12 +14,31 @@ import os
 from pathlib import Path
 
 
+def _validate_target_name(target_name: str) -> None:
+    """Require a plain child-directory name; never allow migration outside the volume."""
+    if (
+        not isinstance(target_name, str)
+        or not target_name
+        or target_name in {".", ".."}
+        or Path(target_name).is_absolute()
+        or Path(target_name).name != target_name
+        or "/" in target_name
+        or "\\" in target_name
+    ):
+        raise ValueError("target_name must be a single child-directory name")
+
+
 def plan_migration(root: str | Path, target_name: str = "active") -> tuple[Path, Path, list[Path]]:
+    _validate_target_name(target_name)
     volume_root = Path(root).resolve()
     if not volume_root.is_dir():
         raise FileNotFoundError(f"Volume root does not exist: {volume_root}")
 
     target = volume_root / target_name
+    if target.is_symlink():
+        raise RuntimeError(f"Target directory must not be a symlink: {target}")
+    if target.exists() and not target.is_dir():
+        raise RuntimeError(f"Target path exists and is not a directory: {target}")
     if target.exists():
         if any(target.iterdir()):
             raise RuntimeError(
