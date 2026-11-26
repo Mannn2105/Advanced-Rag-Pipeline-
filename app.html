@@ -673,6 +673,55 @@ body {
   transition: width 0.5s ease;
 }
 
+/* ─── Query Diagnostics ──────────────────────────────────── */
+.diagnostics-container {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  animation: fadeInUp 0.4s ease;
+}
+.diagnostics-header {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 9px;
+}
+.diagnostics-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+.diagnostic-chip {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.7rem;
+}
+.diagnostics-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.diagnostic-stage {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--bg-base);
+}
+.diagnostic-stage strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+
 /* ─── Input Area ─────────────────────────────────────────── */
 .input-area {
   padding: 16px 24px 20px;
@@ -1043,6 +1092,7 @@ function createAIMessageEl() {
         <div class="msg-body ai-body" id="streamingBody">
           <div class="thinking-dots"><span></span><span></span><span></span></div>
         </div>
+        <div id="diagnosticsContainer"></div>
         <div id="sourcesContainer"></div>
       </div>
     </div>`;
@@ -1072,6 +1122,30 @@ function appendAIMessage(text, sources) {
       </div>
     </div>`;
   chatMessages.appendChild(div);
+}
+
+function renderDiagnostics(meta) {
+  const timings = meta.stage_timings_ms && typeof meta.stage_timings_ms === 'object'
+    ? Object.entries(meta.stage_timings_ms)
+        .filter(([, value]) => Number.isFinite(Number(value)))
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+    : [];
+  const totalMs = Number(meta.total_duration_ms);
+  const summary = [
+    Number.isFinite(totalMs) ? `Total ${Math.round(totalMs)} ms` : '',
+    Number.isFinite(Number(meta.chunks_retrieved)) ? `${Number(meta.chunks_retrieved)} retrieved` : '',
+    Number.isFinite(Number(meta.chunks_after_rerank)) ? `${Number(meta.chunks_after_rerank)} reranked` : '',
+    meta.source_type ? `Source: ${escHtml(String(meta.source_type))}` : ''
+  ].filter(Boolean);
+  const stages = timings.map(([name, value]) =>
+    `<span class="diagnostic-stage">${escHtml(name.replace(/_/g, ' '))}<strong>${Math.round(Number(value))} ms</strong></span>`
+  ).join('');
+  if (!summary.length && !stages) return '';
+  return `<div class="diagnostics-container">
+    <div class="diagnostics-header">⚙ Query diagnostics</div>
+    <div class="diagnostics-summary">${summary.map(item => `<span class="diagnostic-chip">${item}</span>`).join('')}</div>
+    ${stages ? `<div class="diagnostics-stages">${stages}</div>` : ''}
+  </div>`;
 }
 
 function renderSourceCards(sources) {
@@ -1129,6 +1203,7 @@ async function sendMessage() {
   const pipelineEl = aiEl.querySelector('#pipelineProgress');
   const bodyEl = aiEl.querySelector('#streamingBody');
   const sourcesEl = aiEl.querySelector('#sourcesContainer');
+  const diagnosticsEl = aiEl.querySelector('#diagnosticsContainer');
   renderPipelineStages(pipelineEl);
 
   let streamedText = '';
@@ -1160,7 +1235,7 @@ async function sendMessage() {
         if (!line.startsWith('data: ')) continue;
         try {
           const event = JSON.parse(line.slice(6));
-          handleSSEEvent(event, bodyEl, pipelineEl, sourcesEl, () => {
+          handleSSEEvent(event, bodyEl, pipelineEl, sourcesEl, diagnosticsEl, () => {
             if (!gotFirstToken) {
               bodyEl.innerHTML = '';
               gotFirstToken = true;
@@ -1194,7 +1269,7 @@ async function sendMessage() {
   loadConversations();
 }
 
-function handleSSEEvent(event, bodyEl, pipelineEl, sourcesEl, onFirstToken) {
+function handleSSEEvent(event, bodyEl, pipelineEl, sourcesEl, diagnosticsEl, onFirstToken) {
   switch (event.type) {
     case 'stage':
       updatePipelineStage(event.stage, event.status, event.label);
@@ -1219,6 +1294,10 @@ function handleSSEEvent(event, bodyEl, pipelineEl, sourcesEl, onFirstToken) {
 
     case 'sources':
       sourcesEl.innerHTML = renderSourceCards(event.sources);
+      break;
+
+    case 'meta':
+      if (diagnosticsEl) diagnosticsEl.innerHTML = renderDiagnostics(event);
       break;
 
     case 'sub_queries':
