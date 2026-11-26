@@ -60,6 +60,18 @@ class VolumeMigrationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "must not be a symlink"):
                 plan_migration(root)
 
+    def test_rejects_symlink_entries_in_volume_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = self.make_volume(base / "volume")
+            outside = base / "outside"
+            outside.mkdir()
+            (outside / "external-data.txt").write_text("do not move", encoding="utf-8")
+            (root / "external-link").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(RuntimeError, "symlink entries"):
+                plan_migration(root)
+            self.assertTrue((outside / "external-data.txt").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
