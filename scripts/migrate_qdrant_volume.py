@@ -58,6 +58,17 @@ def plan_migration(root: str | Path, target_name: str = "active") -> tuple[Path,
     ]
     if not candidates:
         raise RuntimeError("No volume-root contents were found to migrate.")
+
+    # Moving a symlink can preserve a reference outside the persistent volume,
+    # or change the meaning of a relative link after relocation. Refuse the
+    # entire plan rather than silently moving ambiguous external references.
+    symlinks = [path.name for path in candidates if path.is_symlink()]
+    if symlinks:
+        raise RuntimeError(
+            "Volume root contains symlink entries that must be reviewed manually: "
+            + ", ".join(symlinks)
+        )
+
     return volume_root, target, candidates
 
 
