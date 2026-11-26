@@ -34,7 +34,7 @@ import uvicorn
 import config
 from pipeline import init_models, load_index, run_pipeline, log
 from pipeline import (
-    decompose_query, hyde_expand, hybrid_retrieve_single,
+    decompose_query, hyde_expand, hybrid_retrieve_single, build_hybrid_retrievers,
     rag_fusion, enforce_source_diversity, rerank,
     compress_context, crag_gate, web_fallback,
     final_generate, final_generate_with_fallback, self_critique
@@ -252,11 +252,23 @@ async def query_endpoint(request: Request):
             # ── STAGE 3: Retrieve ─────────────────────────────
             yield send_event("stage", {"stage": "retrieve", "status": "active", "label": "Hybrid retrieval..."})
             all_result_lists = []
+            # Build the vector and BM25 retrievers once and reuse them for every sub-query.
+            vector_retriever, bm25_retriever = await loop.run_in_executor(
+                None, build_hybrid_retrievers, index, nodes_store
+            )
+            print(
+                f"[RETRIEVE] Reusing one vector retriever and one BM25 retriever "
+                f"across {len(sub_queries)} sub-queries.",
+                flush=True,
+            )
             for q in sub_queries:
                 hyde_q = hyde_queries.get(q, q)
                 print(f"[RETRIEVE] Searching original and HyDE variants for: {q[:100]}", flush=True)
                 hyde_res, orig_res, bm25_res = await loop.run_in_executor(
-                    None, hybrid_retrieve_single, q, hyde_q, index, nodes_store
+                    None,
+                    lambda q=q, hyde_q=hyde_q: hybrid_retrieve_single(
+                        q, hyde_q, index, nodes_store, vector_retriever, bm25_retriever
+                    ),
                 )
                 all_result_lists.extend([hyde_res, orig_res, bm25_res])
             print(f"[RETRIEVE] Completed hybrid retrieval for {len(sub_queries)} queries.", flush=True)
