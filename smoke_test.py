@@ -227,6 +227,14 @@ class SmokeTester:
 
         self.check("Grounded answer: demo access limitation", multi_user_boundary)
 
+        def conversation_follow_up():
+            result = self.query("Which file is written for BM25 retrieval?", convo_id)
+            if "nodes.pkl" not in result["answer"].lower():
+                raise SmokeTestError(f"follow-up did not resolve from the same conversation: {result['answer']}")
+            return "follow-up answered in the same conversation"
+
+        self.check("Conversation follow-up continuity", conversation_follow_up)
+
         def unsupported_question():
             result = self.query("What is the capital of France?", convo_id)
             answer = result["answer"].lower()
