@@ -44,7 +44,7 @@ from collections import defaultdict
 from conversation_utils import resolve_conversation_id
 from retrieval_utils import normalize_hyde_query
 from generation_utils import normalize_generated_answer
-from document_utils import build_document_catalog, get_reconstructed_document
+from document_utils import build_document_catalog, get_reconstructed_document, build_document_diagnostics
 from urllib.parse import quote
 
 # ── App Setup ─────────────────────────────────────────────────
@@ -124,6 +124,8 @@ async def get_status():
     return {
         "ready": MODELS_LOADED,
         "chunks": len(nodes_store) if nodes_store else 0,
+        "documents": len(build_document_catalog(nodes_store)) if nodes_store else 0,
+        "snapshot_loaded": nodes_store is not None,
         "model": config.OPENROUTER_MODEL,
         "embed_model": config.EMBED_MODEL,
     }
@@ -131,6 +133,13 @@ async def get_status():
 
 
 # ── Recovered Document Library ─────────────────────────────────
+@app.get("/api/documents/diagnostics")
+async def document_diagnostics():
+    """Expose safe health metadata to verify the persisted text snapshot."""
+    nodes_path = os.path.join(config.QDRANT_DIR, "nodes.pkl")
+    return build_document_diagnostics(nodes_store, nodes_path)
+
+
 @app.get("/api/documents")
 async def list_documents():
     """List source documents represented in the persistent indexed chunks."""
