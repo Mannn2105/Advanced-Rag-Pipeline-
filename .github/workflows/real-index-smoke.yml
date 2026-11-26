@@ -6,6 +6,12 @@ on:
       - integration/clean-rag-review
     paths:
       - ".github/workflows/real-index-smoke.yml"
+      - "config.py"
+      - "ingest.py"
+      - "pipeline.py"
+      - "requirements.txt"
+      - "docs/**"
+      - "evaluation/**"
   workflow_dispatch:
 
 permissions:
