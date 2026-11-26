@@ -203,6 +203,25 @@ The question-based evaluation requires the local index, source documents, and re
 
 See [Evaluation Guide](project_docs/EVALUATION.md) for metric definitions and a reproducible comparison plan.
 
+## Hosted smoke tests
+
+Run read-only checks against the deployed app after a release:
+
+```bash
+python smoke_test.py --base-url https://your-app.up.railway.app
+```
+
+The smoke runner checks application readiness, the persistent document snapshot,
+individual reconstructed-text downloads, ZIP archive integrity, source attribution,
+grounded answers, conversation continuity, and refusal behavior for an out-of-corpus
+question. It does not upload, delete, or re-ingest documents.
+
+If the hosted app uses HTTP Basic authentication, set `APP_USERNAME` and
+`APP_PASSWORD` in the shell environment before running the command. The script
+prints a pass/fail summary and exits non-zero if any check fails. These checks are
+a deployment smoke test, not a substitute for a larger human-reviewed quality
+evaluation.
+
 ## Security and responsible use
 
 - Keep credentials in environment variables; never commit a populated `.env` file.
