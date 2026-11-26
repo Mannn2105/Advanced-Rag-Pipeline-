@@ -137,9 +137,15 @@ def hybrid_retrieve_single(query: str, hyde_query: str, index, nodes_store: list
     hyde_query = normalize_hyde_query(hyde_query, query)
     vector_retriever = index.as_retriever(similarity_top_k=config.VECTOR_TOP_K)
 
-    # Dual retrieval: HyDE query + original query (Fix #1)
-    hyde_results = vector_retriever.retrieve(hyde_query)
+    # Dual retrieval: HyDE query + original query (Fix #1).
+    # When HyDE is unavailable for a decomposed query, reuse the original
+    # retrieval result instead of issuing the same vector search twice.
     orig_results = vector_retriever.retrieve(query)
+    hyde_results = (
+        orig_results
+        if hyde_query == query
+        else vector_retriever.retrieve(hyde_query)
+    )
 
     # BM25 on original query with score threshold (Fix #3)
     bm25_retriever = BM25Retriever.from_defaults(
