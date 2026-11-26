@@ -17,7 +17,6 @@ os.environ["TRANSFORMERS_NO_TF"] = "1"
 # ============================================================
 
 import json
-import uuid
 import time
 import pickle
 import asyncio
