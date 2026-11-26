@@ -44,7 +44,10 @@ from collections import defaultdict
 from conversation_utils import resolve_conversation_id
 from retrieval_utils import normalize_hyde_query
 from generation_utils import normalize_generated_answer
-from document_utils import build_document_catalog, get_reconstructed_document, build_document_diagnostics
+from document_utils import (
+    build_document_catalog, get_reconstructed_document, build_document_diagnostics,
+    recovered_download_details, build_recovered_documents_zip,
+)
 from urllib.parse import quote
 
 # ── App Setup ─────────────────────────────────────────────────
@@ -175,12 +178,27 @@ async def download_document(document_id: str):
     document = get_reconstructed_document(nodes_store, document_id)
     if document is None:
         return JSONResponse(status_code=404, content={"error": "Document not found"})
-    filename = (Path(document["name"]).stem or "recovered-document") + "-recovered.txt"
+    filename, media_type = recovered_download_details(document["name"])
     safe_header = quote(filename)
     return Response(
         content=document["text"],
-        media_type="text/plain; charset=utf-8",
+        media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_header}"}
+    )
+
+
+@app.get("/api/documents/archive/download-all")
+async def download_all_documents():
+    """Download all recoverable indexed text files in one ZIP archive."""
+    if not nodes_store:
+        return JSONResponse(status_code=503, content={"error": "Document index is not loaded"})
+    archive = build_recovered_documents_zip(nodes_store)
+    if not archive:
+        return JSONResponse(status_code=404, content={"error": "No recoverable documents found"})
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="recovered-documents.zip"'}
     )
 
 

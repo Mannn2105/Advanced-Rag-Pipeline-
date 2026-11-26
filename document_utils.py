@@ -1,6 +1,8 @@
 """Read-only catalog and diagnostics for text recovered from the persisted RAG node snapshot."""
 import hashlib
+import io
 import os
+import zipfile
 
 
 def _unwrap_node(item):
@@ -104,3 +106,34 @@ def build_document_diagnostics(nodes, snapshot_path):
             for key in _node_metadata(_unwrap_node(item)).keys()
         }),
     }
+
+
+def recovered_download_details(name):
+    """Choose a useful safe download name while preserving Markdown sources."""
+    stem, extension = os.path.splitext(_document_name(str(name or "")))
+    stem = stem or "recovered-document"
+    if extension.lower() in {".md", ".markdown"}:
+        return f"{stem}-recovered.md", "text/markdown; charset=utf-8"
+    return f"{stem}-recovered.txt", "text/plain; charset=utf-8"
+
+
+def build_recovered_documents_zip(nodes):
+    """Build an in-memory ZIP of reconstructed text; never include source paths."""
+    grouped = _collect_documents(nodes)
+    output = io.BytesIO()
+    used_names = set()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for key, entry in sorted(grouped.items(), key=lambda item: item[1]["name"].lower()):
+            if not entry["chunks"]:
+                continue
+            filename, _ = recovered_download_details(entry["name"])
+            candidate = filename
+            stem, extension = os.path.splitext(filename)
+            suffix = 2
+            while candidate.casefold() in used_names:
+                candidate = f"{stem}-{suffix}{extension}"
+                suffix += 1
+            used_names.add(candidate.casefold())
+            archive.writestr(candidate, "\n\n".join(entry["chunks"]))
+    output.seek(0)
+    return output.getvalue()

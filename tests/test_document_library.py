@@ -1,12 +1,16 @@
+import io
 import os
 import tempfile
 import unittest
+import zipfile
 from types import SimpleNamespace
 
 from document_utils import (
     build_document_catalog,
     build_document_diagnostics,
     get_reconstructed_document,
+    recovered_download_details,
+    build_recovered_documents_zip,
 )
 
 
@@ -60,6 +64,23 @@ class DocumentLibraryTests(unittest.TestCase):
         diagnostics = build_document_diagnostics(self.nodes, "/not/a/real/nodes.pkl")
         self.assertFalse(diagnostics["snapshot_exists"])
         self.assertEqual(diagnostics["snapshot_size_bytes"], 0)
+
+    def test_markdown_download_keeps_markdown_extension(self):
+        filename, media_type = recovered_download_details("folder/guide.md")
+        self.assertEqual(filename, "guide-recovered.md")
+        self.assertEqual(media_type, "text/markdown; charset=utf-8")
+
+    def test_non_markdown_download_uses_text_extension(self):
+        filename, media_type = recovered_download_details(r"C:\\private\\report.pdf")
+        self.assertEqual(filename, "report-recovered.txt")
+        self.assertEqual(media_type, "text/plain; charset=utf-8")
+
+    def test_bulk_archive_contains_recovered_documents_without_paths(self):
+        archive_bytes = build_recovered_documents_zip(self.nodes)
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            self.assertEqual(set(archive.namelist()), {"notes-recovered.txt", "guide-recovered.txt"})
+            self.assertIn("First chunk", archive.read("notes-recovered.txt").decode("utf-8"))
+            self.assertNotIn("private", " ".join(archive.namelist()))
 
     def test_unknown_document_returns_none(self):
         self.assertIsNone(get_reconstructed_document(self.nodes, "missing-document"))
