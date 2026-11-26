@@ -15,6 +15,7 @@ os.environ["TRANSFORMERS_NO_TF"] = "1"
 
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import perf_counter
 
 from rich.console import Console
 from rich.panel import Panel
@@ -131,28 +132,46 @@ def hyde_expand(query: str, fast_llm) -> str:
 
 
 # ── STEP 3: Hybrid Retrieval (Vector + BM25) ─────────────────
-# Retrieves with BOTH HyDE query AND original query for dual coverage
-def hybrid_retrieve_single(query: str, hyde_query: str, index, nodes_store: list) -> list:
+def build_hybrid_retrievers(index, nodes_store: list):
+    """Build retrieval components once per request, not once per sub-query."""
+    vector_retriever = index.as_retriever(similarity_top_k=config.VECTOR_TOP_K)
+    bm25_retriever = BM25Retriever.from_defaults(
+        nodes=nodes_store, similarity_top_k=config.BM25_TOP_K
+    )
+    return vector_retriever, bm25_retriever
+
+
+def hybrid_retrieve_single(
+    query: str,
+    hyde_query: str,
+    index,
+    nodes_store: list,
+    vector_retriever=None,
+    bm25_retriever=None,
+) -> list:
     query = normalize_hyde_query(query, query)
     hyde_query = normalize_hyde_query(hyde_query, query)
-    vector_retriever = index.as_retriever(similarity_top_k=config.VECTOR_TOP_K)
+    started = perf_counter()
 
-    # Dual retrieval: HyDE query + original query (Fix #1).
-    # When HyDE is unavailable for a decomposed query, reuse the original
-    # retrieval result instead of issuing the same vector search twice.
+    if vector_retriever is None or bm25_retriever is None:
+        vector_retriever, bm25_retriever = build_hybrid_retrievers(index, nodes_store)
+
+    vector_started = perf_counter()
     orig_results = vector_retriever.retrieve(query)
     hyde_results = (
         orig_results
         if hyde_query == query
         else vector_retriever.retrieve(hyde_query)
     )
+    log("RETRIEVE", f"Vector search completed in {perf_counter() - vector_started:.2f}s "
+        f"(original={len(orig_results)}, HyDE={len(hyde_results)})", "green")
 
-    # BM25 on original query with score threshold (Fix #3)
-    bm25_retriever = BM25Retriever.from_defaults(
-        nodes=nodes_store, similarity_top_k=config.BM25_TOP_K
-    )
+    bm25_started = perf_counter()
     bm25_raw = bm25_retriever.retrieve(query)
     bm25_results = [n for n in bm25_raw if (n.score or 0) > config.BM25_SCORE_THRESHOLD]
+    log("RETRIEVE", f"BM25 completed in {perf_counter() - bm25_started:.2f}s "
+        f"({len(bm25_results)} above threshold)", "green")
+    log("RETRIEVE", f"Hybrid retrieval total: {perf_counter() - started:.2f}s", "green")
 
     return hyde_results, orig_results, bm25_results
 
@@ -480,9 +499,12 @@ def run_pipeline(query: str, index, nodes_store: list, fast_llm, final_llm) -> d
     log("RETRIEVE", "Running hybrid retrieval for all sub-queries...")
     all_result_lists = []
     total_bm25 = 0
+    vector_retriever, bm25_retriever = build_hybrid_retrievers(index, nodes_store)
     for q in sub_queries:
         hyde_q = hyde_queries[q]
-        hyde_res, orig_res, bm25_res = hybrid_retrieve_single(q, hyde_q, index, nodes_store)
+        hyde_res, orig_res, bm25_res = hybrid_retrieve_single(
+            q, hyde_q, index, nodes_store, vector_retriever, bm25_retriever
+        )
         all_result_lists.extend([hyde_res, orig_res, bm25_res])
         total_bm25 += len(bm25_res)
 
