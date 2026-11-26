@@ -1213,7 +1213,8 @@ function handleSSEEvent(event, bodyEl, pipelineEl, sourcesEl, onFirstToken) {
       break;
 
     case 'correction':
-      bodyEl.innerHTML = '';
+      // Treat a correction/fallback as the first visible answer when streaming emitted no tokens.
+      onFirstToken();
       bodyEl.textContent = event.corrected_answer;
       break;
 
