@@ -224,10 +224,13 @@ evaluation.
 
 ## Security and responsible use
 
+- The hosted app supports shared HTTP Basic authentication through `APP_USERNAME` and `APP_PASSWORD`. Configure both in Railway; if only one is set, protected routes fail closed with HTTP 503. If both are unset, authentication is disabled for local development.
+- The `/api/status` endpoint remains public for Railway health checks. The chat UI, query API, conversation endpoints, and document library require valid Basic credentials when authentication is configured.
+- This is a shared login, not individual user authentication: it does not provide per-user conversation ownership or document-level permissions.
 - Keep credentials in environment variables; never commit a populated `.env` file.
 - Treat retrieved documents and web results as untrusted input.
 - Review cited source passages for important decisions; retrieval and self-critique do not guarantee factual correctness.
-- Add authentication, rate limiting, and appropriate access controls before exposing the service publicly.
+- Add rate limiting and stronger per-user access controls before treating the service as a public multi-user product.
 - Do not index confidential or personal documents unless you have permission and understand how embeddings and external providers process the data.
 
 ## Limitations and possible improvements
