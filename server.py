@@ -225,15 +225,27 @@ async def query_endpoint(request: Request):
             current_stage = "hyde"
             # ── STAGE 2: HyDE ─────────────────────────────────
             yield send_event("stage", {"stage": "hyde", "status": "active", "label": "Expanding with HyDE..."})
-            hyde_queries = {}
-            with ThreadPoolExecutor(max_workers=len(sub_queries)) as ex:
-                futures = {ex.submit(hyde_expand, q, fast_llm): q for q in sub_queries}
-                for future in as_completed(futures):
-                    q = futures[future]
-                    try:
-                        hyde_queries[q] = normalize_hyde_query(future.result(), q)
-                    except Exception:
-                        hyde_queries[q] = q
+
+            # Expand only the original question. Expanding every decomposed
+            # sub-query concurrently can overwhelm free-tier LLM rate limits
+            # and leave the request waiting for several provider calls.
+            # Decomposed queries still participate in hybrid retrieval and RAG-Fusion.
+            hyde_queries = {q: q for q in sub_queries}
+            print("[HYDE] Expanding the original query once; sub-queries use their original wording.", flush=True)
+            try:
+                expanded_query = await loop.run_in_executor(
+                    None, hyde_expand, question, fast_llm
+                )
+                hyde_queries[question] = normalize_hyde_query(expanded_query, question)
+                print("[HYDE] Original-query expansion completed.", flush=True)
+            except Exception as hyde_error:
+                hyde_queries[question] = question
+                print(
+                    f"[HYDE] Expansion failed; continuing with original query: "
+                    f"{type(hyde_error).__name__}: {hyde_error}",
+                    flush=True,
+                )
+
             yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
 
             current_stage = "retrieve"
@@ -241,11 +253,13 @@ async def query_endpoint(request: Request):
             yield send_event("stage", {"stage": "retrieve", "status": "active", "label": "Hybrid retrieval..."})
             all_result_lists = []
             for q in sub_queries:
-                hyde_q = hyde_queries[q]
+                hyde_q = hyde_queries.get(q, q)
+                print(f"[RETRIEVE] Searching original and HyDE variants for: {q[:100]}", flush=True)
                 hyde_res, orig_res, bm25_res = await loop.run_in_executor(
                     None, hybrid_retrieve_single, q, hyde_q, index, nodes_store
                 )
                 all_result_lists.extend([hyde_res, orig_res, bm25_res])
+            print(f"[RETRIEVE] Completed hybrid retrieval for {len(sub_queries)} queries.", flush=True)
 
             current_stage = "fusion"
             # ── STAGE 4: Fusion ───────────────────────────────
