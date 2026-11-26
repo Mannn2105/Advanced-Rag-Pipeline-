@@ -179,7 +179,7 @@ async def rename_conversation(conversation_id: str, request: Request):
 async def query_endpoint(request: Request):
     body = await request.json()
     question = body.get("question", "").strip()
-    conversation_id = body.get("conversation_id", str(uuid.uuid4()))
+    conversation_id = body.get("conversation_id") or str(uuid.uuid4())
 
     if not question:
         return JSONResponse(status_code=400, content={"error": "Empty question"})
