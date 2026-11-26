@@ -134,6 +134,6 @@ def build_recovered_documents_zip(nodes):
                 candidate = f"{stem}-{suffix}{extension}"
                 suffix += 1
             used_names.add(candidate.casefold())
-            archive.writestr(candidate, "\\n\\n".join(entry["chunks"]))
+            archive.writestr(candidate, "\n\n".join(entry["chunks"]))
     output.seek(0)
     return output.getvalue()
