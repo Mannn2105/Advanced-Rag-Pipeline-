@@ -12,7 +12,7 @@ A Python-based document question-answering system that combines dense and sparse
 - **Query expansion:** uses HyDE and query decomposition to improve retrieval coverage.
 - **RAG-Fusion:** merges results from multiple searches using reciprocal rank fusion.
 - **Contextual enrichment:** adds document-level context to chunks during ingestion.
-- **Reranking:** applies Cohere reranking to improve the relevance of retrieved passages.
+- **Reranking:** uses Cohere when a valid `COHERE_API_KEY` is configured; otherwise, or if the Cohere request fails, it falls back to the local cross-encoder reranker.
 - **Context compression:** uses a cross-encoder to prioritize query-relevant content.
 - **Web fallback:** can use Tavily when the configured pipeline determines that document context is insufficient.
 - **Answer review:** includes a self-critique stage intended to help identify unsupported answers.
@@ -28,7 +28,7 @@ A Python-based document question-answering system that combines dense and sparse
 | Vector database | Qdrant |
 | Keyword retrieval | BM25 |
 | Embeddings | BAAI/bge-small-en-v1.5 (configured in `config.py`) |
-| Reranking | Cohere |
+| Reranking | Cohere API (optional) with local cross-encoder fallback |
 | Cross-encoder | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | Model providers | Groq, OpenRouter |
 | Web search fallback | Tavily |
@@ -50,12 +50,17 @@ flowchart TD
     D1 --> E[RAG-Fusion / reciprocal rank fusion]
     D2 --> E
     E --> F[Source diversity filtering]
-    F --> G[Cohere reranking]
-    G --> H[Cross-encoder context compression]
+    F --> G{Cohere key available?}
+    G -- Yes --> G1[Cohere reranking]
+    G -- No / request fails --> G2[Local cross-encoder reranking]
+    G1 --> H[Cross-encoder context compression]
+    G2 --> H
     H --> I{Context sufficient?}
-    I -- Yes --> J[LLM answer generation]
+    I -- Yes --> J[OpenRouter answer generation]
     I -- No --> K[Tavily web fallback]
     K --> J
+    J -. provider error .-> J2[Groq generation fallback]
+    J2 --> L[Answer review]
     J --> L[Answer review]
     L --> M[Stream response with sources]
 ```
@@ -175,7 +180,13 @@ Check `config.py` for the authoritative settings and provider requirements.
 
 ## Tests and evaluation
 
-Run the question-based regression/evaluation runner:
+Run the lightweight unit-test suite used by GitHub Actions:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Run the question-based, corpus-dependent evaluation runner:
 
 ```bash
 python tests.py
@@ -188,7 +199,7 @@ python tests.py --group R
 python tests.py --test R-01
 ```
 
-Evaluation requires the local index, source documents, and relevant provider credentials. Results depend on the selected documents, models, and configuration. Do not interpret research-reported improvements or illustrative figures as benchmark results measured by this repository unless you reproduce and document the experiment.
+The question-based evaluation requires the local index, source documents, and relevant provider credentials. The unit tests are designed to run without the full production provider stack. Results depend on the selected documents, models, and configuration. Do not interpret research-reported improvements or illustrative figures as benchmark results measured by this repository unless you reproduce and document the experiment.
 
 See [Evaluation Guide](project_docs/EVALUATION.md) for metric definitions and a reproducible comparison plan.
 
