@@ -48,6 +48,7 @@ from document_utils import (
     build_document_catalog, get_reconstructed_document, build_document_diagnostics,
     recovered_download_details, build_recovered_documents_zip,
 )
+from auth_utils import is_basic_auth_valid
 from urllib.parse import quote
 
 # ── App Setup ─────────────────────────────────────────────────
@@ -58,6 +59,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def enforce_shared_basic_auth(request: Request, call_next):
+    # Keep the platform health check public so Railway can probe startup.
+    # CORS preflight requests must also pass through without credentials.
+    if request.url.path == "/api/status" or request.method == "OPTIONS":
+        return await call_next(request)
+
+    username = os.getenv("APP_USERNAME", "")
+    password = os.getenv("APP_PASSWORD", "")
+
+    # Local development remains convenient when neither value is configured.
+    # A partial configuration fails closed instead of silently disabling auth.
+    if not username and not password:
+        return await call_next(request)
+    if not username or not password:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Application authentication is misconfigured."},
+        )
+
+    if not is_basic_auth_valid(
+        request.headers.get("Authorization"),
+        username,
+        password,
+    ):
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="RAG Pipeline", charset="UTF-8"'},
+        )
+
+    return await call_next(request)
 
 # ── Global State ──────────────────────────────────────────────
 MODELS_LOADED = False
