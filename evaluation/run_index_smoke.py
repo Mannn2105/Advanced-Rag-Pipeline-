@@ -25,6 +25,23 @@ def run_smoke(index_dir: Path, questions_path: Path, k: int = 5) -> dict:
             f"BM25 node snapshot not found at {nodes_path}. Run ingestion first."
         )
 
+    # A retrieval score is meaningless if the query encoder differs from the
+    # encoder used to build the persisted vectors. Fail before loading models or
+    # opening Qdrant when the index manifest is missing or incompatible.
+    manifest_path = index_dir / "embedding_config.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Embedding manifest is missing or invalid at {manifest_path}. "
+            "Run ingestion to rebuild a compatible evaluation index."
+        ) from exc
+    if not config.manifest_matches(manifest):
+        raise RuntimeError(
+            "Evaluation index embedding manifest does not match the configured "
+            "model, dimension, or collection. Rebuild the index with python ingest.py."
+        )
+
     records = load_jsonl(questions_path)
     if not records:
         raise ValueError(f"No smoke questions found in {questions_path}")
