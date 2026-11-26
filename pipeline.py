@@ -184,15 +184,38 @@ def enforce_source_diversity(nodes: list, max_per_file: int = None) -> list:
 
 # ── STEP 6: Cohere Reranking ──────────────────────────────────
 def rerank(query: str, nodes: list) -> list:
+    """Rerank with Cohere when configured; fall back to the local cross-encoder."""
     log("RERANK", f"Reranking {len(nodes)} chunks → keeping top {config.RERANK_TOP_N}...")
-    reranker = CohereRerank(
-        api_key=config.COHERE_API_KEY,
-        top_n=config.RERANK_TOP_N,
-        model=config.COHERE_RERANK
-    )
-    reranked = reranker.postprocess_nodes(nodes, query_str=query)
-    log("RERANK", f"Top {len(reranked)} chunks selected ✓", "green")
-    return reranked
+    if not nodes:
+        return []
+
+    cohere_key = (config.COHERE_API_KEY or "").strip()
+    if cohere_key and cohere_key != "your_cohere_key_here":
+        try:
+            reranker = CohereRerank(
+                api_key=cohere_key,
+                top_n=config.RERANK_TOP_N,
+                model=config.COHERE_RERANK
+            )
+            reranked = reranker.postprocess_nodes(nodes, query_str=query)
+            log("RERANK", f"Cohere selected top {len(reranked)} chunks ✓", "green")
+            return reranked
+        except Exception as exc:
+            log("RERANK", f"Cohere unavailable ({type(exc).__name__}); using local cross-encoder.", "yellow")
+    else:
+        log("RERANK", "COHERE_API_KEY is not configured; using local cross-encoder.", "yellow")
+
+    ce = _get_cross_encoder()
+    pairs = [(query, item.node.text) for item in nodes]
+    scores = ce.predict(pairs, show_progress_bar=False)
+    reranked = sorted(
+        zip(nodes, scores),
+        key=lambda pair: float(pair[1]),
+        reverse=True,
+    )[:config.RERANK_TOP_N]
+    selected = [item for item, _ in reranked]
+    log("RERANK", f"Local cross-encoder selected top {len(selected)} chunks ✓", "green")
+    return selected
 
 
 # ── STEP 7: Cross-Encoder Context Compression ───────────────
