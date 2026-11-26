@@ -827,7 +827,7 @@ body {
       <div><div class="library-kicker">KNOWLEDGE BASE</div><h2 id="libraryTitle">Document Library</h2></div>
       <button class="btn-icon" onclick="closeDocumentLibrary()" aria-label="Close">✕</button>
     </header>
-    <div class="library-notice">Recovered text from the indexed RAG chunks. These are readable and downloadable reconstructions, not the original PDF/DOCX files.</div>
+    <div class="library-notice">Recovered text from the indexed RAG chunks. These are readable and downloadable reconstructions, not the original PDF/DOCX files. <a class="library-download library-download-all" href="/api/documents/download-all">↓ Download all documents (.zip)</a></div>
     <div class="library-layout">
       <div class="library-list" id="libraryList">Loading indexed documents…</div>
       <article class="library-preview" id="libraryPreview"><div class="library-empty">Choose a document to preview its recovered text.</div></article>
@@ -934,7 +934,7 @@ async function previewRecoveredDocument(id, button) {
     $('libraryPreview').innerHTML = `
       <div class="library-preview-head">
         <h3>📄 ${escHtml(data.name)}</h3>
-        <a class="library-download" href="/api/documents/${encodeURIComponent(id)}/download">↓ Download .txt</a>
+        <a class="library-download" href="/api/documents/${encodeURIComponent(id)}/download">↓ Download .${data.name.toLowerCase().endsWith('.md') || data.name.toLowerCase().endsWith('.markdown') ? 'md' : 'txt'}</a>
       </div>
       <div class="library-document-text">${escHtml(data.text)}</div>`;
   } catch (error) {
