@@ -1,10 +1,10 @@
-"""Utilities for cataloguing and reconstructing text from persisted RAG nodes.
-
-These helpers deliberately operate only on the already-loaded nodes.pkl data. They
-never read arbitrary filesystem paths and never modify the Qdrant collection.
-"""
+"""Read-only catalog and diagnostics for text recovered from the persisted RAG node snapshot."""
 import hashlib
-from pathlib import PurePath
+import os
+
+
+def _unwrap_node(item):
+    return getattr(item, "node", item)
 
 
 def _node_metadata(node):
@@ -13,12 +13,19 @@ def _node_metadata(node):
 
 
 def _document_key(metadata):
-    return str(
+    value = (
         metadata.get("file_path")
         or metadata.get("file_name")
         or metadata.get("filename")
+        or metadata.get("source")
         or "Recovered document"
     )
+    return str(value)
+
+
+def _document_name(key):
+    # Normalize both POSIX and Windows separators; never use this as a filesystem path.
+    return key.replace("\\", "/").rstrip("/").split("/")[-1] or "Recovered document"
 
 
 def _document_id(key):
@@ -27,11 +34,14 @@ def _document_id(key):
 
 def _collect_documents(nodes):
     grouped = {}
-    for node in nodes or []:
-        metadata = _node_metadata(getattr(node, "node", node))
+    for item in nodes or []:
+        node = _unwrap_node(item)
+        metadata = _node_metadata(node)
         key = _document_key(metadata)
-        entry = grouped.setdefault(key, {"name": PurePath(key).name, "chunks": [], "pages": set(), "seen": set()})
-        text = getattr(getattr(node, "node", node), "text", "") or ""
+        entry = grouped.setdefault(key, {
+            "name": _document_name(key), "chunks": [], "pages": set(), "seen": set()
+        })
+        text = getattr(node, "text", "") or ""
         text = str(text).strip()
         if text:
             fingerprint = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
@@ -44,6 +54,10 @@ def _collect_documents(nodes):
     return grouped
 
 
+def _sort_pages(pages):
+    return sorted(pages, key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value))
+
+
 def build_document_catalog(nodes):
     grouped = _collect_documents(nodes)
     catalog = []
@@ -52,7 +66,7 @@ def build_document_catalog(nodes):
             "id": _document_id(key),
             "name": entry["name"],
             "chunk_count": len(entry["chunks"]),
-            "pages": sorted(entry["pages"], key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value)),
+            "pages": _sort_pages(entry["pages"]),
             "reconstructed": True,
         })
     return sorted(catalog, key=lambda item: item["name"].lower())
@@ -66,6 +80,27 @@ def get_reconstructed_document(nodes, document_id):
                 "name": entry["name"],
                 "text": "\n\n".join(entry["chunks"]),
                 "chunk_count": len(entry["chunks"]),
-                "pages": sorted(entry["pages"]),
+                "pages": _sort_pages(entry["pages"]),
             }
     return None
+
+
+def build_document_diagnostics(nodes, snapshot_path):
+    """Return safe index-health facts without exposing paths or document contents."""
+    snapshot_exists = os.path.isfile(snapshot_path)
+    snapshot_size = os.path.getsize(snapshot_path) if snapshot_exists else 0
+    node_list = list(nodes or [])
+    grouped = _collect_documents(node_list)
+    return {
+        "snapshot_exists": snapshot_exists,
+        "snapshot_size_bytes": snapshot_size,
+        "loaded_chunks": len(node_list),
+        "document_count": len(grouped),
+        "chunks_with_text": sum(bool(str(getattr(_unwrap_node(item), "text", "") or "").strip()) for item in node_list),
+        "documents_with_recoverable_text": sum(bool(entry["chunks"]) for entry in grouped.values()),
+        "metadata_keys": sorted({
+            key
+            for item in node_list
+            for key in _node_metadata(_unwrap_node(item)).keys()
+        }),
+    }
