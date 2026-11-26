@@ -27,7 +27,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -44,6 +44,8 @@ from collections import defaultdict
 from conversation_utils import resolve_conversation_id
 from retrieval_utils import normalize_hyde_query
 from generation_utils import normalize_generated_answer
+from document_utils import build_document_catalog, get_reconstructed_document
+from urllib.parse import quote
 
 # ── App Setup ─────────────────────────────────────────────────
 app = FastAPI(title="RAG Pipeline UI", version="2.0")
@@ -125,6 +127,52 @@ async def get_status():
         "model": config.OPENROUTER_MODEL,
         "embed_model": config.EMBED_MODEL,
     }
+
+
+
+# ── Recovered Document Library ─────────────────────────────────
+@app.get("/api/documents")
+async def list_documents():
+    """List source documents represented in the persistent indexed chunks."""
+    if not nodes_store:
+        return []
+    return build_document_catalog(nodes_store)
+
+
+@app.get("/api/documents/{document_id}")
+async def preview_document(document_id: str):
+    """Return reconstructed text for a document represented in nodes.pkl."""
+    if not nodes_store:
+        return JSONResponse(status_code=503, content={"error": "Document index is not loaded"})
+    document = get_reconstructed_document(nodes_store, document_id)
+    if document is None:
+        return JSONResponse(status_code=404, content={"error": "Document not found"})
+    return {
+        "id": document["id"],
+        "name": document["name"],
+        "text": document["text"],
+        "chunk_count": document["chunk_count"],
+        "pages": document["pages"],
+        "reconstructed": True,
+        "notice": "Recovered from indexed text chunks. Original PDF/DOCX formatting and embedded media are not available."
+    }
+
+
+@app.get("/api/documents/{document_id}/download")
+async def download_document(document_id: str):
+    """Download reconstructed indexed text without exposing filesystem paths."""
+    if not nodes_store:
+        return JSONResponse(status_code=503, content={"error": "Document index is not loaded"})
+    document = get_reconstructed_document(nodes_store, document_id)
+    if document is None:
+        return JSONResponse(status_code=404, content={"error": "Document not found"})
+    filename = (Path(document["name"]).stem or "recovered-document") + "-recovered.txt"
+    safe_header = quote(filename)
+    return Response(
+        content=document["text"],
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_header}"}
+    )
 
 
 # ── Conversation Endpoints ────────────────────────────────────

@@ -770,6 +770,29 @@ body {
   color: var(--text-secondary);
   margin: 2px;
 }
+ 
+/* ── Recovered document library ─────────────────────────── */
+.library-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:100;align-items:center;justify-content:center;padding:20px}
+.library-backdrop.visible{display:flex}
+.library-modal{width:min(1100px,96vw);height:min(760px,90vh);background:var(--bg-base);border:1px solid var(--border-glow);border-radius:18px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden}
+.library-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--border)}
+.library-header h2{font-size:1.1rem;font-weight:650}
+.library-kicker{font-size:.65rem;letter-spacing:.12em;color:var(--accent);font-weight:700;margin-bottom:4px}
+.library-notice{padding:10px 22px;background:var(--gold-soft);color:var(--gold);font-size:.74rem;line-height:1.5;border-bottom:1px solid var(--border)}
+.library-layout{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:0;flex:1}
+.library-list{overflow:auto;padding:12px;border-right:1px solid var(--border);color:var(--text-muted);font-size:.82rem}
+.library-doc{width:100%;display:block;text-align:left;padding:12px;margin-bottom:7px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);cursor:pointer;font:inherit}
+.library-doc:hover,.library-doc.active{border-color:var(--border-glow);background:var(--accent-glow)}
+.library-doc strong{display:block;font-size:.8rem;overflow-wrap:anywhere;margin-bottom:5px}
+.library-doc span{font-size:.68rem;color:var(--text-muted)}
+.library-preview{overflow:auto;padding:20px 24px;min-width:0}
+.library-preview-head{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}
+.library-preview-head h3{font-size:.95rem;overflow-wrap:anywhere}
+.library-download{padding:8px 12px;border-radius:8px;background:var(--accent);color:white;text-decoration:none;font-size:.75rem;font-weight:600}
+.library-document-text{white-space:pre-wrap;overflow-wrap:anywhere;font: .8rem/1.75 'JetBrains Mono',monospace;color:var(--text-secondary);background:var(--bg-surface);padding:16px;border:1px solid var(--border);border-radius:10px}
+.library-empty{height:100%;display:grid;place-items:center;text-align:center;color:var(--text-muted);font-size:.82rem;padding:30px}
+@media(max-width:700px){.library-backdrop{padding:8px}.library-modal{width:100%;height:96vh}.library-layout{grid-template-columns:1fr;grid-template-rows:190px minmax(0,1fr)}.library-list{border-right:0;border-bottom:1px solid var(--border);display:flex;gap:8px;overflow:auto}.library-doc{min-width:180px;max-width:220px;height:max-content}}
+
 </style>
 </head>
 <body>
@@ -788,12 +811,30 @@ body {
       <button class="btn-new-chat" onclick="newConversation()">
         <span>＋</span> New Chat
       </button>
+      <button class="btn-new-chat" style="margin-top:8px;background:var(--bg-elevated);box-shadow:none;border:1px solid var(--border);" onclick="openDocumentLibrary()">
+        <span>📚</span> Document Library
+      </button>
     </div>
     <div class="conversation-list" id="convoList">
       <!-- Filled by JS -->
     </div>
   </aside>
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+ 
+<div class="library-backdrop" id="libraryBackdrop" onclick="if(event.target===this) closeDocumentLibrary()">
+  <section class="library-modal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+    <header class="library-header">
+      <div><div class="library-kicker">KNOWLEDGE BASE</div><h2 id="libraryTitle">Document Library</h2></div>
+      <button class="btn-icon" onclick="closeDocumentLibrary()" aria-label="Close">✕</button>
+    </header>
+    <div class="library-notice">Recovered text from the indexed RAG chunks. These are readable and downloadable reconstructions, not the original PDF/DOCX files.</div>
+    <div class="library-layout">
+      <div class="library-list" id="libraryList">Loading indexed documents…</div>
+      <article class="library-preview" id="libraryPreview"><div class="library-empty">Choose a document to preview its recovered text.</div></article>
+    </div>
+  </section>
+</div>
+
 
   <!-- ─── Main ─────────────────────────────────────────── -->
   <div class="main-area">
@@ -857,6 +898,53 @@ const statusText   = $('statusText');
 const topBarTitle  = $('topBarTitle');
 const sidebar      = $('sidebar');
 const overlay      = $('sidebarOverlay');
+
+
+// ─── Recovered Document Library ─────────────────────────────
+async function openDocumentLibrary() {
+  $('libraryBackdrop').classList.add('visible');
+  $('libraryList').textContent = 'Loading indexed documents…';
+  $('libraryPreview').innerHTML = '<div class="library-empty">Choose a document to preview its recovered text.</div>';
+  try {
+    const response = await fetch('/api/documents');
+    if (!response.ok) throw new Error('Could not load the document index.');
+    const documents = await response.json();
+    if (!documents.length) {
+      $('libraryList').textContent = 'No indexed documents were found.';
+      return;
+    }
+    $('libraryList').innerHTML = documents.map(doc => `
+      <button class="library-doc" data-document-id="${escHtml(doc.id)}" onclick="previewRecoveredDocument('${escHtml(doc.id)}',this)">
+        <strong>📄 ${escHtml(doc.name)}</strong>
+        <span>${doc.chunk_count} recovered chunks · ${doc.pages.length ? doc.pages.length + ' page labels' : 'page labels unavailable'}</span>
+      </button>`).join('');
+  } catch (error) {
+    $('libraryList').textContent = error.message || 'Document library unavailable.';
+  }
+}
+
+async function previewRecoveredDocument(id, button) {
+  document.querySelectorAll('.library-doc').forEach(item => item.classList.remove('active'));
+  if (button) button.classList.add('active');
+  $('libraryPreview').innerHTML = '<div class="library-empty">Recovering document text…</div>';
+  try {
+    const response = await fetch('/api/documents/' + encodeURIComponent(id));
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not recover this document.');
+    $('libraryPreview').innerHTML = `
+      <div class="library-preview-head">
+        <h3>📄 ${escHtml(data.name)}</h3>
+        <a class="library-download" href="/api/documents/${encodeURIComponent(id)}/download">↓ Download .txt</a>
+      </div>
+      <div class="library-document-text">${escHtml(data.text)}</div>`;
+  } catch (error) {
+    $('libraryPreview').innerHTML = '<div class="library-empty">' + escHtml(error.message || 'Preview failed.') + '</div>';
+  }
+}
+
+function closeDocumentLibrary() {
+  $('libraryBackdrop').classList.remove('visible');
+}
 
 // ─── Startup ────────────────────────────────────────────────
 (async function init() {
