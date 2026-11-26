@@ -42,6 +42,7 @@ from pipeline import (
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from conversation_utils import resolve_conversation_id
+from retrieval_utils import normalize_hyde_query
 
 # ── App Setup ─────────────────────────────────────────────────
 app = FastAPI(title="RAG Pipeline UI", version="2.0")
@@ -229,7 +230,7 @@ async def query_endpoint(request: Request):
                 for future in as_completed(futures):
                     q = futures[future]
                     try:
-                        hyde_queries[q] = future.result()
+                        hyde_queries[q] = normalize_hyde_query(future.result(), q)
                     except Exception:
                         hyde_queries[q] = q
             yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
