@@ -1140,7 +1140,7 @@ async function sendMessage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question,
-        conversation_id: currentConvoId
+        conversation_id: currentConvoId || undefined
       })
     });
 
