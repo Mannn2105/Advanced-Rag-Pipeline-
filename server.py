@@ -187,7 +187,7 @@ async def download_document(document_id: str):
     )
 
 
-@app.get("/api/documents/download-all")
+@app.get("/api/documents/archive/download-all")
 async def download_all_documents():
     """Download all recoverable indexed text files in one ZIP archive."""
     if not nodes_store:
