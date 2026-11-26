@@ -1,7 +1,6 @@
 import unittest
-from unittest.mock import patch
 
-from pipeline import rerank
+from rerank_utils import local_cross_encoder_rerank
 
 
 class FakeNode:
@@ -14,26 +13,27 @@ class FakeEncoder:
         return [0.2, 0.9, 0.5]
 
 
-class RerankFallbackTests(unittest.TestCase):
-    @patch("pipeline.config.COHERE_API_KEY", "")
-    @patch("pipeline.config.RERANK_TOP_N", 2)
-    @patch("pipeline._get_cross_encoder", return_value=FakeEncoder())
-    def test_missing_cohere_key_uses_local_cross_encoder(self, _encoder):
+class LocalRerankTests(unittest.TestCase):
+    def test_returns_highest_scoring_nodes(self):
         nodes = [FakeNode("low"), FakeNode("high"), FakeNode("middle")]
-        result = rerank("query", nodes)
-        self.assertEqual([item.node.text for item in result], ["high", "middle"])
-
-    @patch("pipeline.config.COHERE_API_KEY", "configured-key")
-    @patch("pipeline.config.RERANK_TOP_N", 2)
-    @patch("pipeline.CohereRerank", side_effect=RuntimeError("provider unavailable"))
-    @patch("pipeline._get_cross_encoder", return_value=FakeEncoder())
-    def test_cohere_error_falls_back_locally(self, _encoder, _cohere):
-        nodes = [FakeNode("low"), FakeNode("high"), FakeNode("middle")]
-        result = rerank("query", nodes)
+        result = local_cross_encoder_rerank(nodes, "query", FakeEncoder(), 2)
         self.assertEqual([item.node.text for item in result], ["high", "middle"])
 
     def test_empty_nodes_returns_empty(self):
-        self.assertEqual(rerank("query", []), [])
+        self.assertEqual(local_cross_encoder_rerank([], "query", FakeEncoder(), 2), [])
+
+    def test_non_positive_top_n_returns_empty(self):
+        nodes = [FakeNode("one")]
+        self.assertEqual(local_cross_encoder_rerank(nodes, "query", FakeEncoder(), 0), [])
+
+    def test_mismatched_score_count_raises(self):
+        class BadEncoder:
+            def predict(self, pairs, show_progress_bar=False):
+                return [0.5]
+
+        nodes = [FakeNode("one"), FakeNode("two")]
+        with self.assertRaises(ValueError):
+            local_cross_encoder_rerank(nodes, "query", BadEncoder(), 2)
 
 
 if __name__ == "__main__":
