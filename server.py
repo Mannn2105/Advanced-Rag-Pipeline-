@@ -20,6 +20,7 @@ import json
 import time
 import pickle
 import asyncio
+import traceback
 import aiofiles
 from pathlib import Path
 from datetime import datetime
@@ -210,6 +211,7 @@ async def query_endpoint(request: Request):
 
         yield send_event("conversation_id", {"conversation_id": conversation_id})
 
+        current_stage = "decompose"
         try:
             # ── STAGE 1: Decompose ────────────────────────────
             yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
@@ -218,6 +220,7 @@ async def query_endpoint(request: Request):
             yield send_event("stage", {"stage": "decompose", "status": "done", "label": f"Split into {len(sub_queries)} sub-queries"})
             yield send_event("sub_queries", {"sub_queries": sub_queries})
 
+            current_stage = "hyde"
             # ── STAGE 2: HyDE ─────────────────────────────────
             yield send_event("stage", {"stage": "hyde", "status": "active", "label": "Expanding with HyDE..."})
             hyde_queries = {}
@@ -231,6 +234,7 @@ async def query_endpoint(request: Request):
                         hyde_queries[q] = q
             yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
 
+            current_stage = "retrieve"
             # ── STAGE 3: Retrieve ─────────────────────────────
             yield send_event("stage", {"stage": "retrieve", "status": "active", "label": "Hybrid retrieval..."})
             all_result_lists = []
@@ -241,6 +245,7 @@ async def query_endpoint(request: Request):
                 )
                 all_result_lists.extend([hyde_res, orig_res, bm25_res])
 
+            current_stage = "fusion"
             # ── STAGE 4: Fusion ───────────────────────────────
             yield send_event("stage", {"stage": "retrieve", "status": "done", "label": "Retrieval complete"})
             yield send_event("stage", {"stage": "fusion", "status": "active", "label": "RAG-Fusion merging..."})
@@ -248,11 +253,13 @@ async def query_endpoint(request: Request):
             diverse_nodes = enforce_source_diversity(fused_nodes)
             yield send_event("stage", {"stage": "fusion", "status": "done", "label": f"Fused → {len(fused_nodes)} unique chunks"})
 
+            current_stage = "rerank"
             # ── STAGE 5: Rerank ───────────────────────────────
             yield send_event("stage", {"stage": "rerank", "status": "active", "label": "Reranking chunks..."})
             reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
             yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
 
+            current_stage = "compress"
             # ── STAGE 6: Compress ─────────────────────────────
             yield send_event("stage", {"stage": "compress", "status": "active", "label": "Compressing context..."})
             raw_context = "\n\n---\n\n".join([n.node.text for n in reranked])
@@ -261,6 +268,7 @@ async def query_endpoint(request: Request):
             )
             yield send_event("stage", {"stage": "compress", "status": "done", "label": "Context compressed"})
 
+            current_stage = "crag"
             # ── STAGE 7: CRAG Gate ────────────────────────────
             yield send_event("stage", {"stage": "crag", "status": "active", "label": "CRAG sufficiency check..."})
             crag_ok = await loop.run_in_executor(
@@ -282,6 +290,7 @@ async def query_endpoint(request: Request):
                     source_type = "docs_partial"
                 yield send_event("stage", {"stage": "web", "status": "done", "label": "Web fallback complete"})
 
+            current_stage = "generate"
             # ── STAGE 8: Generate (STREAMING) ─────────────────
             yield send_event("stage", {"stage": "generate", "status": "active", "label": "Generating answer..."})
 
@@ -322,6 +331,7 @@ async def query_endpoint(request: Request):
             draft_answer = "".join(draft_tokens)
             yield send_event("stage", {"stage": "generate", "status": "done", "label": "Generation complete"})
 
+            current_stage = "critique"
             # ── STAGE 9: Self-Critique ────────────────────────
             yield send_event("stage", {"stage": "critique", "status": "active", "label": "Self-critique..."})
             final_answer = await loop.run_in_executor(
@@ -334,6 +344,7 @@ async def query_endpoint(request: Request):
 
             yield send_event("stage", {"stage": "critique", "status": "done", "label": "Self-critique passed"})
 
+            current_stage = "build_sources"
             # ── Build sources ─────────────────────────────────
             sources = []
             for n in reranked:
@@ -352,6 +363,7 @@ async def query_endpoint(request: Request):
                 "sub_queries": sub_queries,
             })
 
+            current_stage = "persist_assistant"
             # ── Save assistant message ────────────────────────
             history = _load_history()
             if conversation_id in history:
@@ -372,7 +384,16 @@ async def query_endpoint(request: Request):
             yield send_event("done", {"status": "complete"})
 
         except Exception as e:
-            yield send_event("error", {"message": str(e)})
+            print(
+                f"❌ Pipeline failed during '{current_stage}': "
+                f"{type(e).__name__}: {e}",
+                flush=True,
+            )
+            traceback.print_exc()
+            yield send_event("error", {
+                "stage": current_stage,
+                "message": str(e),
+            })
 
     return StreamingResponse(
         event_stream(),
