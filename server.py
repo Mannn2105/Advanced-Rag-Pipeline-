@@ -391,24 +391,22 @@ async def query_endpoint(request: Request):
                 )
                 all_result_lists.extend([orig_res, original_bm25])
             else:
-                expanded_query = hyde_queries.get(question, question)
+                # One dense search per request: HyDE supplies the semantic query,
+                # while the original question and decomposed sub-queries retain
+                # keyword recall through BM25. This avoids a second expensive
+                # CPU embedding + local-Qdrant round trip.
+                vector_query = hyde_queries.get(question, question)
+                vector_results = await loop.run_in_executor(
+                    None, vector_retriever.retrieve, vector_query
+                )
+                all_result_lists.append(vector_results)
                 print(
-                    "[RETRIEVE] Running vector retrieval for the original question "
-                    "and its single HyDE expansion; sub-queries use BM25.",
+                    "[RETRIEVE] One HyDE vector search completed; original and "
+                    "decomposed queries use BM25.",
                     flush=True,
                 )
-                hyde_res, orig_res, original_bm25 = await loop.run_in_executor(
-                    None,
-                    lambda: hybrid_retrieve_single(
-                        question, expanded_query, index, nodes_store,
-                        vector_retriever, bm25_retriever
-                    ),
-                )
-                all_result_lists.extend([hyde_res, orig_res, original_bm25])
 
                 for q in sub_queries:
-                    if q == question:
-                        continue
                     bm25_raw = await loop.run_in_executor(
                         None, bm25_retriever.retrieve, q
                     )
@@ -419,7 +417,7 @@ async def query_endpoint(request: Request):
                     all_result_lists.append(bm25_res)
 
             print(
-                f"[RETRIEVE] Completed hybrid retrieval: 2 vector searches maximum "
+                f"[RETRIEVE] Completed hybrid retrieval: 1 vector search maximum "
                 f"and BM25 across {len(sub_queries)} queries.",
                 flush=True,
             )
@@ -441,7 +439,17 @@ async def query_endpoint(request: Request):
                 reranked = diverse_nodes[:config.RERANK_TOP_N]
                 print(f"[FAST PATH] Using top {len(reranked)} fused chunks; skipping local reranking.", flush=True)
             else:
-                reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
+                # Bound local cross-encoder work on the small demo corpus.
+                # Keep the best RRF candidates, then rerank them for precision.
+                rerank_candidates = diverse_nodes[:12]
+                print(
+                    f"[RERANK] Limiting cross-encoder input to {len(rerank_candidates)} "
+                    f"top fusion candidates.",
+                    flush=True,
+                )
+                reranked = await loop.run_in_executor(
+                    None, rerank, question, rerank_candidates
+                )
             yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
 
             current_stage = "compress"
