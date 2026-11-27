@@ -387,7 +387,11 @@ async def query_endpoint(request: Request):
                         q, hyde_q, index, nodes_store, vector_retriever, bm25_retriever
                     ),
                 )
-                all_result_lists.extend([hyde_res, orig_res, bm25_res])
+                if simple_query:
+                    # HyDE and original results are identical on this route.
+                    all_result_lists.extend([orig_res, bm25_res])
+                else:
+                    all_result_lists.extend([hyde_res, orig_res, bm25_res])
             print(f"[RETRIEVE] Completed hybrid retrieval for {len(sub_queries)} queries.", flush=True)
 
             current_stage = "fusion"
@@ -401,16 +405,27 @@ async def query_endpoint(request: Request):
             current_stage = "rerank"
             # ── STAGE 5: Rerank ───────────────────────────────
             yield send_event("stage", {"stage": "rerank", "status": "active", "label": "Reranking chunks..."})
-            reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
+            if simple_query:
+                # RRF provides a useful ranking for short factual questions;
+                # avoid a second CPU-heavy cross-encoder pass.
+                reranked = diverse_nodes[:config.RERANK_TOP_N]
+                print(f"[FAST PATH] Using top {len(reranked)} fused chunks; skipping local reranking.", flush=True)
+            else:
+                reranked = await loop.run_in_executor(None, rerank, question, diverse_nodes)
             yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
 
             current_stage = "compress"
             # ── STAGE 6: Compress ─────────────────────────────
             yield send_event("stage", {"stage": "compress", "status": "active", "label": "Compressing context..."})
             raw_context = "\n\n---\n\n".join([n.node.text for n in reranked])
-            compressed_context = await loop.run_in_executor(
-                None, compress_context, question, raw_context, fast_llm
-            )
+            if simple_query:
+                # Preserve full retrieved passages; skip expensive sentence scoring.
+                compressed_context = raw_context
+                print("[FAST PATH] Skipping cross-encoder context compression.", flush=True)
+            else:
+                compressed_context = await loop.run_in_executor(
+                    None, compress_context, question, raw_context, fast_llm
+                )
             yield send_event("stage", {"stage": "compress", "status": "done", "label": "Context compressed"})
 
             current_stage = "crag"
