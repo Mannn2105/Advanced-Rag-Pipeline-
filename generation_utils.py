@@ -1,11 +1,31 @@
-"""Helpers for validating generated answer text."""
+"""Helpers for validating and normalizing generated answer text."""
+
+import json
 
 
 def normalize_generated_answer(answer: object) -> str:
-    """Return trimmed answer text, or an empty string for unusable model output."""
+    """Return readable answer text, unwrapping common JSON answer envelopes."""
     if not isinstance(answer, str):
         return ""
-    return answer.strip()
+    text = answer.strip()
+    if not text:
+        return ""
+
+    # Some providers return a JSON object even when plain Markdown was requested.
+    # Unwrap only a clear string-valued answer field; otherwise preserve the text.
+    candidate = text
+    if candidate.startswith("```") and candidate.endswith("```"):
+        candidate = candidate.strip("`").strip()
+        if candidate.lower().startswith("json"):
+            candidate = candidate[4:].strip()
+    if candidate.startswith("{") and candidate.endswith("}"):
+        try:
+            payload = json.loads(candidate)
+            if isinstance(payload, dict) and isinstance(payload.get("answer"), str):
+                return payload["answer"].strip()
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return text
 
 
 def generate_with_fallback(primary_generate, fallback_generate, primary_error=None):
