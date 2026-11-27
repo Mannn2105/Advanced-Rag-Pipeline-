@@ -31,14 +31,14 @@ def normalize_generated_answer(answer: object) -> str:
     # ending in a backslash, or a backslash on a line by itself.
     cleaned_lines = []
     for line in text.splitlines():
-        if re.fullmatch(r"\\s*\\\\\\s*", line):
+        if re.fullmatch(r"\s*\\\s*", line):
             continue
-        if re.fullmatch(r"\\s*[-*+]\\s*\\\\\\s*", line):
+        if re.fullmatch(r"\s*[-*+]\s*\\\s*", line):
             continue
-        if re.match(r"^\\s*[-*+]\\s+.*\\\\\\s*$", line):
-            line = re.sub(r"\\\\\\s*$", "", line)
+        if re.match(r"^\s*[-*+]\s+.*\\\s*$", line):
+            line = re.sub(r"\\\s*$", "", line)
         cleaned_lines.append(line)
-    return "\\n".join(cleaned_lines).strip()
+    return "\n".join(cleaned_lines).strip()
 
 
 def generate_with_fallback(primary_generate, fallback_generate, primary_error=None):
