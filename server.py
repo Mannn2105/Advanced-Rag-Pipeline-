@@ -511,13 +511,18 @@ async def query_endpoint(request: Request):
             yield send_event("stage", {"stage": "generate", "status": "active", "label": "Generating answer..."})
 
             gen_prompt = (
-                "You are a precise, factual assistant. Answer the question using ONLY "
-                "the provided context, except that the trusted runtime configuration "
-                "below is authoritative for details about this running application.\n"
+                "You are a precise, factual assistant. Answer in clear, readable Markdown, "
+                "not JSON or another data wrapper. Use ONLY the provided context, except "
+                "that the trusted runtime configuration below is authoritative for details "
+                "about this running application.\n"
                 f"Trusted runtime configuration: embedding model = {config.EMBED_MODEL}; "
                 f"generation model = {config.OPENROUTER_MODEL}.\n"
                 "If a document conflicts with the runtime configuration, clearly distinguish "
                 "what the document says from what this deployment actually uses.\n"
+                "The application displays retrieved source documents and excerpts separately "
+                "beneath your answer. Do not claim that supporting documents cannot be shown; "
+                "do not invent filenames, pages, quotations, or citations. Answer from the "
+                "provided context and let the separate source cards identify the retrieved files.\n"
                 "If the answer cannot be found in the context or trusted configuration, reply: "
                 "'The provided documents do not contain this information.'\n\n"
                 f"Context:\n{compressed_context}\n\n"
