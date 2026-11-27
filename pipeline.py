@@ -3,6 +3,10 @@ import os
 import re
 os.environ["USE_TF"] = "0"
 os.environ["TRANSFORMERS_NO_TF"] = "1"
+# Keep CPU inference within Railway's two-vCPU allocation; avoid thread oversubscription.
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # ============================================================
 #  pipeline.py — Max-Accuracy RAG Pipeline v2
@@ -45,6 +49,16 @@ def log(step: str, msg: str, color: str = "cyan"):
 
 # ── Model Initialisation ──────────────────────────────────────
 def init_models():
+    # Torch otherwise may create more worker threads than this container can use.
+    try:
+        import torch
+        torch.set_num_threads(2)
+        try:
+            torch.set_num_interop_threads(1)
+        except RuntimeError:
+            pass  # inter-op threads may already be initialized by an imported dependency
+    except Exception as exc:
+        log("INIT", f"Could not tune PyTorch CPU threads: {type(exc).__name__}", "yellow")
     log("INIT", "Loading embedding model onto CPU...", "yellow")
     embed_model = HuggingFaceEmbedding(model_name=config.EMBED_MODEL, device="cpu")
 
