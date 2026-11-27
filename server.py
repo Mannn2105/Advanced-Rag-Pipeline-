@@ -594,18 +594,25 @@ async def query_endpoint(request: Request):
             # ── Build sources ─────────────────────────────────
             sources = []
             seen_source_pages = set()
+            document_ids_by_name = {
+                doc["name"]: doc["id"] for doc in build_document_catalog(nodes_store)
+            }
             for n in reranked:
                 meta = n.node.metadata
-                file_name = meta.get("file_name", "unknown")
+                file_name = meta.get("file_name") or meta.get("filename") or "unknown"
                 page_label = str(meta.get("page_label", "?"))
                 source_key = (file_name, page_label)
                 if source_key in seen_source_pages:
                     continue
                 seen_source_pages.add(source_key)
+                excerpt = " ".join(str(getattr(n.node, "text", "") or "").split())
+                safe_name = str(file_name).replace("\\", "/").split("/")[-1]
                 sources.append({
                     "file": file_name,
+                    "document_id": document_ids_by_name.get(safe_name),
                     "page": page_label,
-                    "score": round(n.score, 3) if n.score else None
+                    "score": round(n.score, 3) if n.score else None,
+                    "excerpt": excerpt[:360] + ("…" if len(excerpt) > 360 else "")
                 })
 
             yield send_event("sources", {"sources": sources})

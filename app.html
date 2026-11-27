@@ -641,17 +641,25 @@ body {
 }
 
 .source-card {
-  padding: 8px 14px;
+  padding: 10px 12px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
   transition: all var(--transition);
   cursor: default;
+  min-width: min(100%, 260px);
+  max-width: 360px;
 }
+.source-card-button { color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.source-card-button:hover { border-color: var(--accent); background: var(--bg-elevated); }
+.source-card-top { display:flex; align-items:center; gap:8px; }
+.source-note { color:var(--text-secondary); font-size:.7rem; line-height:1.5; border-top:1px solid var(--border); padding-top:7px; }
+.source-open-hint { color:var(--accent); font-size:.65rem; margin-left:auto; }
 .source-card:hover {
   border-color: var(--border-glow);
   background: var(--bg-elevated);
@@ -942,6 +950,12 @@ async function previewRecoveredDocument(id, button) {
   }
 }
 
+async function openSourceDocument(id) {
+  await openDocumentLibrary();
+  const button = document.querySelector('.library-doc[data-document-id="' + id + '"]');
+  if (button) await previewRecoveredDocument(id, button);
+}
+
 function closeDocumentLibrary() {
   $('libraryBackdrop').classList.remove('visible');
 }
@@ -1166,15 +1180,20 @@ function renderSourceCards(sources) {
   if (!sources || !sources.length) return '';
   const cards = sources.map(s => {
     const scoreW = s.score ? Math.round(s.score * 100) : 0;
-    return `<div class="source-card">
+    const top = `<span class="source-card-top">
       <span>📄</span>
       <span class="source-file">${escHtml(s.file)}</span>
       ${s.page && s.page !== '?' ? `<span class="source-page">p.${escHtml(s.page)}</span>` : ''}
-      ${s.score != null ? `<div class="source-score-bar"><div class="source-score-fill" style="width:${scoreW}%"></div></div>` : ''}
-    </div>`;
+      ${s.score != null ? `<span class="source-score-bar"><span class="source-score-fill" style="display:block;width:${scoreW}%"></span></span>` : ''}
+      ${s.document_id ? '<span class="source-open-hint">Open document ↗</span>' : ''}
+    </span>`;
+    const note = s.excerpt ? `<span class="source-note">${escHtml(s.excerpt)}</span>` : '';
+    return s.document_id
+      ? `<button type="button" class="source-card source-card-button" onclick="openSourceDocument('${escHtml(s.document_id)}')">${top}${note}</button>`
+      : `<div class="source-card">${top}${note}</div>`;
   }).join('');
   return `<div class="sources-container">
-    <div class="sources-header">📎 Sources</div>
+    <div class="sources-header">📎 Sources & retrieved notes</div>
     <div class="source-cards">${cards}</div>
   </div>`;
 }
