@@ -370,10 +370,15 @@ def crag_gate(query: str, context_text: str, fast_llm) -> bool:
 
 # ── STEP 9: Web Fallback ──────────────────────────────────────
 def web_fallback(query: str, doc_context: str = "") -> str:
+    api_key = (config.TAVILY_API_KEY or "").strip()
+    if not api_key or api_key == "your_tavily_key_here":
+        log("FALLBACK", "TAVILY_API_KEY is not configured; continuing with document context only.", "yellow")
+        return doc_context
+
     log("FALLBACK", "Searching the web via Tavily...", "yellow")
     try:
         from tavily import TavilyClient
-        client = TavilyClient(api_key=config.TAVILY_API_KEY)
+        client = TavilyClient(api_key=api_key)
         results = client.search(query=query, max_results=config.MAX_WEB_RESULTS)
         raw_results = results.get("results") or []  # guard against None
         web_combined = "\n\n---\n\n".join([
@@ -411,26 +416,37 @@ def final_generate_with_fallback(query: str, context: str, primary_llm, fallback
     else:
         log("GENERATE", "Trying primary provider with Groq fallback available...", "yellow")
     return generate_with_fallback(
-        lambda: final_generate(query, context, primary_llm),
-        lambda: final_generate(query, context, fallback_llm),
+        lambda: final_generate(query, context, primary_llm, config.OPENROUTER_MODEL),
+        lambda: final_generate(query, context, fallback_llm, config.GROQ_MODEL),
         primary_error=primary_error,
     )
 
 
-def final_generate(query: str, context: str, final_llm) -> str:
-    log("GENERATE", f"Generating answer with {config.OPENROUTER_MODEL.split('/')[-1]}...")
+def final_generate(query: str, context: str, final_llm, generation_model: str = None) -> str:
+    generation_model = generation_model or config.OPENROUTER_MODEL
+    log("GENERATE", f"Generating answer with {generation_model}...")
+    trusted_runtime = (
+        f"Embedding model: {config.EMBED_MODEL}. "
+        f"Configured primary generation model: {config.OPENROUTER_MODEL}. "
+        f"Model used for this answer: {generation_model}. "
+        "The application implements a CRAG-style retrieval sufficiency gate: "
+        "the compressed document context is checked by the Groq model configured "
+        "for fast tasks, which returns YES or NO. If insufficient, the application "
+        "attempts a Tavily web search and combines usable results with the document "
+        "context. If Tavily is unavailable or unconfigured, it continues with document "
+        "context only. The CRAG gate is application code, not a model."
+    )
     prompt = (
-        "You are a precise, factual assistant. Answer the question using ONLY "
-        "the provided context, except that the trusted runtime configuration "
-        "below is authoritative for details about this running application.\n"
-        f"Trusted runtime configuration: embedding model = {config.EMBED_MODEL}; "
-        f"generation model = {config.OPENROUTER_MODEL}.\n"
-        "If a document conflicts with the runtime configuration, clearly distinguish "
-        "what the document says from what this deployment actually uses.\n"
+        "You are a precise, factual assistant. Answer using the provided context "
+        "and the trusted runtime facts below. The trusted runtime facts are authoritative "
+        "for the running application's implementation and active model selection. "
+        "Do not claim a runtime fact is absent merely because it is not in the documents. "
+        "Distinguish the configured primary model from the model actually used for this answer.\n\n"
+        f"Trusted runtime facts: {trusted_runtime}\n\n"
         "IMPORTANT: Always complete your answer fully. Never truncate mid-sentence. "
         "When listing names, always include ALL names mentioned in the context.\n"
-        "If the answer cannot be found in the context or trusted configuration, reply: "
-        "'The provided documents do not contain this information.'\n\n"
+        "If a requested fact is absent from both the context and trusted runtime facts, "
+        "say that it is not available.\n\n"
         f"Context:\n{context}\n\n"
         f"Question: {query}\n\nAnswer:"
     )
@@ -442,7 +458,15 @@ def final_generate(query: str, context: str, final_llm) -> str:
 def self_critique(query: str, draft_answer: str, context: str, fast_llm) -> str:
     log("CRITIQUE", "Running self-critique pass...")
     prompt = (
-        "You are a strict fact-checker. Verify the draft answer.\n\n"
+        "You are a strict fact-checker. Verify the draft answer against both source context "
+        "and trusted runtime facts about this application.\n"
+        f"Trusted runtime facts: embedding model = {config.EMBED_MODEL}; "
+        f"configured primary generation model = {config.OPENROUTER_MODEL}; "
+        f"Groq fallback generation model = {config.GROQ_MODEL}. "
+        "The application implements a CRAG-style sufficiency gate in pipeline.py: "
+        "Groq checks whether compressed retrieved context is sufficient (YES/NO); "
+        "a NO triggers a Tavily web-search attempt, and if Tavily is unavailable "
+        "the system continues with document context only. CRAG is code, not a model.\n\n"
         "RULES:\n"
         "1. If EVERY claim is supported by the context → reply with only: PASS\n"
         "2. If any claim is unsupported → rewrite the corrected answer only\n"
