@@ -1169,7 +1169,7 @@ function renderSourceCards(sources) {
     return `<div class="source-card">
       <span>📄</span>
       <span class="source-file">${escHtml(s.file)}</span>
-      <span class="source-page">p.${escHtml(s.page)}</span>
+      ${s.page && s.page !== '?' ? `<span class="source-page">p.${escHtml(s.page)}</span>` : ''}
       ${s.score != null ? `<div class="source-score-bar"><div class="source-score-fill" style="width:${scoreW}%"></div></div>` : ''}
     </div>`;
   }).join('');
