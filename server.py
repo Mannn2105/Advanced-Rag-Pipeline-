@@ -510,13 +510,33 @@ async def query_endpoint(request: Request):
             # ── STAGE 8: Generate (STREAMING) ─────────────────
             yield send_event("stage", {"stage": "generate", "status": "active", "label": "Generating answer..."})
 
+            runtime_document_count = len(build_document_catalog(nodes_store)) if nodes_store else 0
+            runtime_chunk_count = len(nodes_store) if nodes_store else 0
+            runtime_snapshot_path = os.path.join(config.QDRANT_DIR, "nodes.pkl")
+            runtime_snapshot_exists = os.path.isfile(runtime_snapshot_path)
+            runtime_storage_path = os.path.abspath(config.QDRANT_DIR)
+            runtime_diagnostics = (
+                f"Application ready = {MODELS_LOADED}; "
+                f"documents loaded = {runtime_document_count}; "
+                f"chunks loaded = {runtime_chunk_count}; "
+                f"BM25 snapshot loaded in memory = {nodes_store is not None}; "
+                f"BM25 snapshot file exists = {runtime_snapshot_exists}; "
+                "vector database = local Qdrant; "
+                f"configured Qdrant storage directory = {runtime_storage_path}; "
+                "hosted Railway deployment uses a persistent volume for this directory."
+            )
+
             gen_prompt = (
                 "You are a precise, factual assistant. Answer in clear, readable Markdown, "
                 "not JSON or another data wrapper. Use ONLY the provided context, except "
-                "that the trusted runtime configuration below is authoritative for details "
-                "about this running application.\n"
+                "that the trusted runtime configuration and live diagnostics below are "
+                "authoritative for details about this running application.\n"
                 f"Trusted runtime configuration: embedding model = {config.EMBED_MODEL}; "
                 f"generation model = {config.OPENROUTER_MODEL}.\n"
+                f"Trusted live runtime diagnostics for this request: {runtime_diagnostics}\n"
+                "Treat these live counts and status values as current for this request. "
+                "Clearly distinguish live runtime facts from sample-document claims. "
+                "Do not say that live counts are unavailable when they are present here.\n"
                 "If a document conflicts with the runtime configuration, clearly distinguish "
                 "what the document says from what this deployment actually uses.\n"
                 "Implementation details for this deployment: simple questions use a fast path "
