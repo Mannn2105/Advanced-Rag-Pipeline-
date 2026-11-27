@@ -93,6 +93,22 @@ async def enforce_shared_basic_auth(request: Request, call_next):
 
     return await call_next(request)
 
+def _is_simple_query(question: str) -> bool:
+    """Identify short, single-intent questions that do not need query expansion."""
+    normalized = " ".join(question.lower().split())
+    words = normalized.split()
+    complex_markers = (
+        " compare ", " comparison ", " difference ", " versus ", " vs ",
+        " pros and cons ", " step by step ", " relationship ",
+        " explain how ", " explain why ", " multiple ", " each of ",
+        " across ", " both ", " and ", " or ",
+    )
+    padded = f" {normalized} "
+    return len(words) <= 16 and len(question) <= 120 and not any(
+        marker in padded for marker in complex_markers
+    )
+
+
 # ── Global State ──────────────────────────────────────────────
 MODELS_LOADED = False
 embed_model = None
@@ -327,8 +343,13 @@ async def query_endpoint(request: Request):
             # ── STAGE 1: Decompose ────────────────────────────
             yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
             loop = asyncio.get_event_loop()
-            sub_queries = await loop.run_in_executor(None, decompose_query, question, fast_llm)
-            yield send_event("stage", {"stage": "decompose", "status": "done", "label": f"Split into {len(sub_queries)} sub-queries"})
+            simple_query = _is_simple_query(question)
+            if simple_query:
+                sub_queries = [question]
+                print("[FAST PATH] Simple single-intent question; skipping query decomposition.", flush=True)
+            else:
+                sub_queries = await loop.run_in_executor(None, decompose_query, question, fast_llm)
+            yield send_event("stage", {"stage": "decompose", "status": "done", "label": "Using original query" if simple_query else f"Split into {len(sub_queries)} sub-queries"})
             yield send_event("sub_queries", {"sub_queries": sub_queries})
 
             current_stage = "hyde"
@@ -340,20 +361,23 @@ async def query_endpoint(request: Request):
             # and leave the request waiting for several provider calls.
             # Decomposed queries still participate in hybrid retrieval and RAG-Fusion.
             hyde_queries = {q: q for q in sub_queries}
-            print("[HYDE] Expanding the original query once; sub-queries use their original wording.", flush=True)
-            try:
-                expanded_query = await loop.run_in_executor(
-                    None, hyde_expand, question, fast_llm
-                )
-                hyde_queries[question] = normalize_hyde_query(expanded_query, question)
-                print("[HYDE] Original-query expansion completed.", flush=True)
-            except Exception as hyde_error:
-                hyde_queries[question] = question
-                print(
-                    f"[HYDE] Expansion failed; continuing with original query: "
-                    f"{type(hyde_error).__name__}: {hyde_error}",
-                    flush=True,
-                )
+            if simple_query:
+                print("[FAST PATH] Skipping HyDE for a simple question.", flush=True)
+            else:
+                print("[HYDE] Expanding the original query once; sub-queries use their original wording.", flush=True)
+                try:
+                    expanded_query = await loop.run_in_executor(
+                        None, hyde_expand, question, fast_llm
+                    )
+                    hyde_queries[question] = normalize_hyde_query(expanded_query, question)
+                    print("[HYDE] Original-query expansion completed.", flush=True)
+                except Exception as hyde_error:
+                    hyde_queries[question] = question
+                    print(
+                        f"[HYDE] Expansion failed; continuing with original query: "
+                        f"{type(hyde_error).__name__}: {hyde_error}",
+                        flush=True,
+                    )
 
             yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
 
@@ -486,15 +510,21 @@ async def query_endpoint(request: Request):
             current_stage = "critique"
             # ── STAGE 9: Self-Critique ────────────────────────
             yield send_event("stage", {"stage": "critique", "status": "active", "label": "Self-critique..."})
-            final_answer = await loop.run_in_executor(
-                None, self_critique, question, draft_answer, compressed_context, fast_llm
-            )
+            if simple_query:
+                final_answer = draft_answer
+                print("[FAST PATH] Skipping self-critique for a simple factual question.", flush=True)
+                critique_label = "Skipped for simple question"
+            else:
+                final_answer = await loop.run_in_executor(
+                    None, self_critique, question, draft_answer, compressed_context, fast_llm
+                )
+                critique_label = "Self-critique passed"
 
             # If critique changed the answer, send the corrected version
             if final_answer != draft_answer:
                 yield send_event("correction", {"corrected_answer": final_answer})
 
-            yield send_event("stage", {"stage": "critique", "status": "done", "label": "Self-critique passed"})
+            yield send_event("stage", {"stage": "critique", "status": "done", "label": critique_label})
 
             current_stage = "build_sources"
             # ── Build sources ─────────────────────────────────
