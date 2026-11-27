@@ -486,8 +486,13 @@ async def query_endpoint(request: Request):
 
             gen_prompt = (
                 "You are a precise, factual assistant. Answer the question using ONLY "
-                "the provided context.\n"
-                "If the answer cannot be found in the context, reply: "
+                "the provided context, except that the trusted runtime configuration "
+                "below is authoritative for details about this running application.\n"
+                f"Trusted runtime configuration: embedding model = {config.EMBED_MODEL}; "
+                f"generation model = {config.OPENROUTER_MODEL}.\n"
+                "If a document conflicts with the runtime configuration, clearly distinguish "
+                "what the document says from what this deployment actually uses.\n"
+                "If the answer cannot be found in the context or trusted configuration, reply: "
                 "'The provided documents do not contain this information.'\n\n"
                 f"Context:\n{compressed_context}\n\n"
                 f"Question: {question}\n\nAnswer:"
