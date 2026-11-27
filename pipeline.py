@@ -157,13 +157,23 @@ def hybrid_retrieve_single(
         vector_retriever, bm25_retriever = build_hybrid_retrievers(index, nodes_store)
 
     vector_started = perf_counter()
+    original_started = perf_counter()
     orig_results = vector_retriever.retrieve(query)
-    hyde_results = (
-        orig_results
-        if hyde_query == query
-        else vector_retriever.retrieve(hyde_query)
-    )
-    log("RETRIEVE", f"Vector search completed in {perf_counter() - vector_started:.2f}s "
+    original_duration = perf_counter() - original_started
+    log("RETRIEVE", f"Original-query vector retrieval: {original_duration:.2f}s "
+        f"({len(orig_results)} results)", "dim")
+
+    if hyde_query == query:
+        hyde_results = orig_results
+        hyde_duration = 0.0
+    else:
+        hyde_started = perf_counter()
+        hyde_results = vector_retriever.retrieve(hyde_query)
+        hyde_duration = perf_counter() - hyde_started
+        log("RETRIEVE", f"HyDE vector retrieval: {hyde_duration:.2f}s "
+            f"({len(hyde_results)} results)", "dim")
+
+    log("RETRIEVE", f"Vector retrieval total: {perf_counter() - vector_started:.2f}s "
         f"(original={len(orig_results)}, HyDE={len(hyde_results)})", "green")
 
     bm25_started = perf_counter()
