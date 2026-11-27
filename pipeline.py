@@ -9,12 +9,15 @@ os.environ.setdefault("MKL_NUM_THREADS", "2")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # ============================================================
-#  pipeline.py — Max-Accuracy RAG Pipeline v2
+#  pipeline.py — Advanced RAG Pipeline
 #
-#  Query Decomposition → HyDE (parallel) → Hybrid Retrieval
-#  → RAG-Fusion → BM25 Threshold → Source Diversity
-#  → Cohere Rerank → Context Compression → CRAG Gate
-#  → Web Fallback → Parallel Generation → Self-Critique
+#  Query Decomposition → HyDE → Hybrid Retrieval
+#  → RAG-Fusion → Source Diversity → Conditional Reranking
+#  → Cross-Encoder Context Compression → CRAG Gate
+#  → Optional Web Fallback → Answer Generation → Self-Critique
+#
+#  The API uses a fast path for simple questions and a fuller
+#  retrieval/reranking path for complex questions.
 # ============================================================
 
 from collections import defaultdict
