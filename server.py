@@ -324,6 +324,17 @@ async def query_endpoint(request: Request):
 
         current_stage = "decompose"
         try:
+            request_started = time.perf_counter()
+            stage_started = request_started
+            stage_timings = {}
+
+            def finish_stage(name):
+                nonlocal stage_started
+                now = time.perf_counter()
+                stage_timings[name] = round((now - stage_started) * 1000)
+                stage_started = now
+                print(f"[TIMING] {name}={stage_timings[name]}ms", flush=True)
+
             # ── STAGE 1: Decompose ────────────────────────────
             yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
             loop = asyncio.get_event_loop()
@@ -335,6 +346,7 @@ async def query_endpoint(request: Request):
                 sub_queries = await loop.run_in_executor(None, decompose_query, question, fast_llm)
             yield send_event("stage", {"stage": "decompose", "status": "done", "label": "Using original query" if simple_query else f"Split into {len(sub_queries)} sub-queries"})
             yield send_event("sub_queries", {"sub_queries": sub_queries})
+            finish_stage("decompose")
 
             current_stage = "hyde"
             # ── STAGE 2: HyDE ─────────────────────────────────
@@ -364,6 +376,7 @@ async def query_endpoint(request: Request):
                     )
 
             yield send_event("stage", {"stage": "hyde", "status": "done", "label": "HyDE expansion complete"})
+            finish_stage("hyde")
 
             current_stage = "retrieve"
             # ── STAGE 3: Retrieve ─────────────────────────────
@@ -421,6 +434,7 @@ async def query_endpoint(request: Request):
                 f"and BM25 across {len(sub_queries)} queries.",
                 flush=True,
             )
+            finish_stage("retrieve")
 
             current_stage = "fusion"
             # ── STAGE 4: Fusion ───────────────────────────────
@@ -429,6 +443,7 @@ async def query_endpoint(request: Request):
             fused_nodes = rag_fusion(all_result_lists)
             diverse_nodes = enforce_source_diversity(fused_nodes)
             yield send_event("stage", {"stage": "fusion", "status": "done", "label": f"Fused → {len(fused_nodes)} unique chunks"})
+            finish_stage("fusion_and_diversity")
 
             current_stage = "rerank"
             # ── STAGE 5: Rerank ───────────────────────────────
@@ -451,6 +466,7 @@ async def query_endpoint(request: Request):
                     None, rerank, question, rerank_candidates
                 )
             yield send_event("stage", {"stage": "rerank", "status": "done", "label": f"Top {len(reranked)} chunks selected"})
+            finish_stage("rerank")
 
             current_stage = "compress"
             # ── STAGE 6: Compress ─────────────────────────────
@@ -465,6 +481,7 @@ async def query_endpoint(request: Request):
                     None, compress_context, question, raw_context, fast_llm
                 )
             yield send_event("stage", {"stage": "compress", "status": "done", "label": "Context compressed"})
+            finish_stage("compress")
 
             current_stage = "crag"
             # ── STAGE 7: CRAG Gate ────────────────────────────
@@ -487,6 +504,7 @@ async def query_endpoint(request: Request):
                 else:
                     source_type = "docs_partial"
                 yield send_event("stage", {"stage": "web", "status": "done", "label": "Web fallback complete"})
+            finish_stage("crag_and_fallback")
 
             current_stage = "generate"
             # ── STAGE 8: Generate (STREAMING) ─────────────────
@@ -548,6 +566,7 @@ async def query_endpoint(request: Request):
                 yield send_event("correction", {"corrected_answer": draft_answer})
 
             yield send_event("stage", {"stage": "generate", "status": "done", "label": "Generation complete"})
+            finish_stage("generate")
 
             current_stage = "critique"
             # ── STAGE 9: Self-Critique ────────────────────────
@@ -567,6 +586,9 @@ async def query_endpoint(request: Request):
                 yield send_event("correction", {"corrected_answer": final_answer})
 
             yield send_event("stage", {"stage": "critique", "status": "done", "label": critique_label})
+            finish_stage("critique")
+            total_ms = round((time.perf_counter() - request_started) * 1000)
+            print(f"[TIMING] total_pipeline={total_ms}ms stages={stage_timings}", flush=True)
 
             current_stage = "build_sources"
             # ── Build sources ─────────────────────────────────
