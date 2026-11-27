@@ -421,10 +421,15 @@ def final_generate(query: str, context: str, final_llm) -> str:
     log("GENERATE", f"Generating answer with {config.OPENROUTER_MODEL.split('/')[-1]}...")
     prompt = (
         "You are a precise, factual assistant. Answer the question using ONLY "
-        "the provided context.\n"
+        "the provided context, except that the trusted runtime configuration "
+        "below is authoritative for details about this running application.\n"
+        f"Trusted runtime configuration: embedding model = {config.EMBED_MODEL}; "
+        f"generation model = {config.OPENROUTER_MODEL}.\n"
+        "If a document conflicts with the runtime configuration, clearly distinguish "
+        "what the document says from what this deployment actually uses.\n"
         "IMPORTANT: Always complete your answer fully. Never truncate mid-sentence. "
         "When listing names, always include ALL names mentioned in the context.\n"
-        "If the answer cannot be found in the context, reply: "
+        "If the answer cannot be found in the context or trusted configuration, reply: "
         "'The provided documents do not contain this information.'\n\n"
         f"Context:\n{context}\n\n"
         f"Question: {query}\n\nAnswer:"
