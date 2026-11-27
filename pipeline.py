@@ -70,7 +70,7 @@ def init_models():
         model=config.GROQ_MODEL,
         api_key=config.GROQ_API_KEY,
         max_tokens=4096,
-        additional_kwargs={"reasoning_effort": "low", "reasoning_format": "hidden"},
+        additional_kwargs={"reasoning_effort": "low"},
     )
     final_llm = OpenAILike(
         model=config.OPENROUTER_MODEL,
