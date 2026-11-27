@@ -158,11 +158,14 @@ async def serve_app():
 # ── Status Endpoint ───────────────────────────────────────────
 @app.get("/api/status")
 async def get_status():
+    nodes_path = os.path.join(config.QDRANT_DIR, "nodes.pkl")
     return {
         "ready": MODELS_LOADED,
         "chunks": len(nodes_store) if nodes_store else 0,
         "documents": len(build_document_catalog(nodes_store)) if nodes_store else 0,
         "snapshot_loaded": nodes_store is not None,
+        "snapshot_exists": os.path.isfile(nodes_path),
+        "qdrant_dir": os.path.abspath(config.QDRANT_DIR),
         "model": config.OPENROUTER_MODEL,
         "embed_model": config.EMBED_MODEL,
     }
@@ -321,6 +324,58 @@ async def query_endpoint(request: Request):
         _save_history(history)
 
         yield send_event("conversation_id", {"conversation_id": conversation_id})
+
+        # Runtime diagnostics are deterministic operational data, not corpus QA.
+        # Answer these requests directly so retrieval or an LLM cannot replace live
+        # values with sample-document claims or incorrectly report them unavailable.
+        diagnostic_terms = (
+            "runtime status", "runtime diagnostic", "live diagnostic",
+            "application readiness", "loaded document count", "loaded chunk count",
+            "bm25 snapshot", "qdrant storage directory", "configured embedding model",
+            "configured generation model",
+        )
+        normalized_question = question.lower()
+        if any(term in normalized_question for term in diagnostic_terms):
+            nodes_path = os.path.join(config.QDRANT_DIR, "nodes.pkl")
+            runtime_storage_path = os.path.abspath(config.QDRANT_DIR)
+            runtime_document_count = len(build_document_catalog(nodes_store)) if nodes_store else 0
+            runtime_chunk_count = len(nodes_store) if nodes_store else 0
+            snapshot_loaded = nodes_store is not None
+            snapshot_exists = os.path.isfile(nodes_path)
+            answer = (
+                "## Live Runtime Diagnostics\n\n"
+                f"- **Application ready:** {MODELS_LOADED}\n"
+                f"- **Indexed documents loaded:** {runtime_document_count}\n"
+                f"- **Chunks loaded:** {runtime_chunk_count}\n"
+                f"- **BM25 snapshot loaded in memory:** {snapshot_loaded}\n"
+                f"- **BM25 snapshot file exists:** {snapshot_exists}\n"
+                f"- **Qdrant storage directory:** `{runtime_storage_path}`\n"
+                f"- **Embedding model:** `{config.EMBED_MODEL}`\n"
+                f"- **Generation model:** `{config.OPENROUTER_MODEL}`\n\n"
+                "These values are read directly from the running application, not inferred "
+                "from indexed project documentation."
+            )
+            yield send_event("token", {"token": answer})
+            yield send_event("sources", {"sources": []})
+            yield send_event("meta", {
+                "source_type": "runtime_diagnostics",
+                "chunks_retrieved": 0,
+                "chunks_after_rerank": 0,
+                "sub_queries": [],
+            })
+            history = _load_history()
+            if conversation_id in history:
+                history[conversation_id]["messages"].append({
+                    "role": "assistant",
+                    "content": answer,
+                    "timestamp": datetime.now().isoformat(),
+                    "sources": [],
+                    "meta": {"source_type": "runtime_diagnostics"},
+                })
+                history[conversation_id]["updated"] = datetime.now().isoformat()
+                _save_history(history)
+            yield send_event("done", {"status": "complete"})
+            return
 
         current_stage = "decompose"
         try:
