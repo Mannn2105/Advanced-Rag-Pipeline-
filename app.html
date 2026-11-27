@@ -1232,6 +1232,20 @@ async function sendMessage() {
       })
     });
 
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 300);
+      throw new Error(`Request failed (HTTP ${res.status})${detail ? `: ${detail}` : ''}`);
+    }
+    if (!res.body) {
+      throw new Error('The server returned an empty response stream.');
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/event-stream')) {
+      const detail = (await res.text()).slice(0, 300);
+      throw new Error(detail || 'The server returned an unexpected response format.');
+    }
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
