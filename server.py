@@ -330,9 +330,7 @@ async def query_endpoint(request: Request):
         # values with sample-document claims or incorrectly report them unavailable.
         diagnostic_terms = (
             "runtime status", "runtime diagnostic", "live diagnostic",
-            "application readiness", "loaded document count", "loaded chunk count",
-            "bm25 snapshot", "qdrant storage directory", "configured embedding model",
-            "configured generation model",
+            "application readiness",
         )
         normalized_question = question.lower()
         if any(term in normalized_question for term in diagnostic_terms):
