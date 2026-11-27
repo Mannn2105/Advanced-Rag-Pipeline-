@@ -42,7 +42,7 @@ from pipeline import (
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from conversation_utils import resolve_conversation_id
-from retrieval_utils import normalize_hyde_query
+from retrieval_utils import normalize_hyde_query, is_simple_query
 from generation_utils import normalize_generated_answer
 from document_utils import (
     build_document_catalog, get_reconstructed_document, build_document_diagnostics,
@@ -92,22 +92,6 @@ async def enforce_shared_basic_auth(request: Request, call_next):
         )
 
     return await call_next(request)
-
-def _is_simple_query(question: str) -> bool:
-    """Identify short, single-intent questions that do not need query expansion."""
-    normalized = " ".join(question.lower().split())
-    words = normalized.split()
-    complex_markers = (
-        " compare ", " comparison ", " difference ", " versus ", " vs ",
-        " pros and cons ", " step by step ", " relationship ",
-        " explain how ", " explain why ", " multiple ", " each of ",
-        " across ", " both ", " and ", " or ",
-    )
-    padded = f" {normalized} "
-    return len(words) <= 16 and len(question) <= 120 and not any(
-        marker in padded for marker in complex_markers
-    )
-
 
 # ── Global State ──────────────────────────────────────────────
 MODELS_LOADED = False
@@ -343,7 +327,7 @@ async def query_endpoint(request: Request):
             # ── STAGE 1: Decompose ────────────────────────────
             yield send_event("stage", {"stage": "decompose", "status": "active", "label": "Decomposing query..."})
             loop = asyncio.get_event_loop()
-            simple_query = _is_simple_query(question)
+            simple_query = is_simple_query(question)
             if simple_query:
                 sub_queries = [question]
                 print("[FAST PATH] Simple single-intent question; skipping query decomposition.", flush=True)
