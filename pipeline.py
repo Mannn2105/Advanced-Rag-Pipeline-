@@ -25,6 +25,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from llama_index.core import VectorStoreIndex, StorageContext, Settings
+from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.groq import Groq
 from llama_index.llms.openai_like import OpenAILike
@@ -65,7 +66,12 @@ def init_models():
     log("INIT", "Loading cross-encoder compression model (22MB)...", "yellow")
     _get_cross_encoder()  # pre-warm — avoids delay on first query
 
-    fast_llm = Groq(model=config.GROQ_MODEL, api_key=config.GROQ_API_KEY)
+    fast_llm = Groq(
+        model=config.GROQ_MODEL,
+        api_key=config.GROQ_API_KEY,
+        max_tokens=4096,
+        additional_kwargs={"reasoning_effort": "low", "reasoning_format": "hidden"},
+    )
     final_llm = OpenAILike(
         model=config.OPENROUTER_MODEL,
         api_base="https://openrouter.ai/api/v1",
@@ -474,8 +480,50 @@ def final_generate(query: str, context: str, final_llm, generation_model: str = 
         f"Context:\n{context}\n\n"
         f"Question: {query}\n\nAnswer:"
     )
+    # GPT-OSS can return reasoning metadata separately from visible answer text.
+    # Prefer the normal completion path, then retry through chat if the visible
+    # completion is empty so a valid reasoning-only response is not mistaken for
+    # a successful answer.
     response = final_llm.complete(prompt)
-    return response.text.strip()
+    answer = _extract_generation_text(response)
+
+    if not answer:
+        log("GENERATE", "Completion contained no visible answer; retrying with chat response format.", "yellow")
+        chat_response = final_llm.chat([
+            ChatMessage(role=MessageRole.USER, content=prompt)
+        ])
+        answer = _extract_generation_text(chat_response)
+
+    if not answer:
+        raise RuntimeError(f"{generation_model} returned an empty completion and chat response.")
+    return answer
+
+
+def _extract_generation_text(response) -> str:
+    """Extract visible text across LlamaIndex completion and chat response shapes."""
+    candidates = [
+        getattr(response, "text", None),
+        getattr(getattr(response, "message", None), "content", None),
+    ]
+    raw = getattr(response, "raw", None)
+    choices = getattr(raw, "choices", None)
+    if choices:
+        candidates.append(getattr(getattr(choices[0], "message", None), "content", None))
+
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+        if isinstance(candidate, list):
+            parts = []
+            for item in candidate:
+                value = getattr(item, "text", None)
+                if value is None and isinstance(item, dict):
+                    value = item.get("text")
+                if isinstance(value, str) and value.strip():
+                    parts.append(value.strip())
+            if parts:
+                return "\n".join(parts)
+    return ""
 
 
 # ── STEP 11: Self-Critique ────────────────────────────────────
