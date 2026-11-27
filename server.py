@@ -369,7 +369,9 @@ async def query_endpoint(request: Request):
             # ── STAGE 3: Retrieve ─────────────────────────────
             yield send_event("stage", {"stage": "retrieve", "status": "active", "label": "Hybrid retrieval..."})
             all_result_lists = []
-            # Build the vector and BM25 retrievers once and reuse them for every sub-query.
+            # Reuse retrievers, but run expensive vector search only for the
+            # original question and its single HyDE expansion. The decomposed
+            # sub-queries still contribute keyword recall through BM25.
             vector_retriever, bm25_retriever = await loop.run_in_executor(
                 None, build_hybrid_retrievers, index, nodes_store
             )
@@ -378,21 +380,49 @@ async def query_endpoint(request: Request):
                 f"across {len(sub_queries)} sub-queries.",
                 flush=True,
             )
-            for q in sub_queries:
-                hyde_q = hyde_queries.get(q, q)
-                print(f"[RETRIEVE] Searching original and HyDE variants for: {q[:100]}", flush=True)
-                hyde_res, orig_res, bm25_res = await loop.run_in_executor(
+
+            if simple_query:
+                hyde_res, orig_res, original_bm25 = await loop.run_in_executor(
                     None,
-                    lambda q=q, hyde_q=hyde_q: hybrid_retrieve_single(
-                        q, hyde_q, index, nodes_store, vector_retriever, bm25_retriever
+                    lambda: hybrid_retrieve_single(
+                        question, question, index, nodes_store,
+                        vector_retriever, bm25_retriever
                     ),
                 )
-                if simple_query:
-                    # HyDE and original results are identical on this route.
-                    all_result_lists.extend([orig_res, bm25_res])
-                else:
-                    all_result_lists.extend([hyde_res, orig_res, bm25_res])
-            print(f"[RETRIEVE] Completed hybrid retrieval for {len(sub_queries)} queries.", flush=True)
+                all_result_lists.extend([orig_res, original_bm25])
+            else:
+                expanded_query = hyde_queries.get(question, question)
+                print(
+                    "[RETRIEVE] Running vector retrieval for the original question "
+                    "and its single HyDE expansion; sub-queries use BM25.",
+                    flush=True,
+                )
+                hyde_res, orig_res, original_bm25 = await loop.run_in_executor(
+                    None,
+                    lambda: hybrid_retrieve_single(
+                        question, expanded_query, index, nodes_store,
+                        vector_retriever, bm25_retriever
+                    ),
+                )
+                all_result_lists.extend([hyde_res, orig_res, original_bm25])
+
+                for q in sub_queries:
+                    if q == question:
+                        continue
+                    bm25_raw = await loop.run_in_executor(
+                        None, bm25_retriever.retrieve, q
+                    )
+                    bm25_res = [
+                        node for node in bm25_raw
+                        if (node.score or 0) > config.BM25_SCORE_THRESHOLD
+                    ]
+                    all_result_lists.append(bm25_res)
+
+            print(
+                f"[RETRIEVE] Completed hybrid retrieval: 2 vector searches maximum "
+                f"and BM25 across {len(sub_queries)} queries.",
+                flush=True,
+            )
 
             current_stage = "fusion"
             # ── STAGE 4: Fusion ───────────────────────────────
@@ -528,11 +558,18 @@ async def query_endpoint(request: Request):
             current_stage = "build_sources"
             # ── Build sources ─────────────────────────────────
             sources = []
+            seen_source_pages = set()
             for n in reranked:
                 meta = n.node.metadata
+                file_name = meta.get("file_name", "unknown")
+                page_label = str(meta.get("page_label", "?"))
+                source_key = (file_name, page_label)
+                if source_key in seen_source_pages:
+                    continue
+                seen_source_pages.add(source_key)
                 sources.append({
-                    "file": meta.get("file_name", "unknown"),
-                    "page": str(meta.get("page_label", "?")),
+                    "file": file_name,
+                    "page": page_label,
                     "score": round(n.score, 3) if n.score else None
                 })
 
