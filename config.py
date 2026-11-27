@@ -14,7 +14,7 @@ TAVILY_API_KEY = os.getenv('TAVILY_API_KEY', 'your_tavily_key_here')     # https
 
 # ── Model Selection ──────────────────────────────────────────
 GROQ_MODEL     = "openai/gpt-oss-20b"   # current Groq replacement for HyDE/CRAG/critique
-OPENROUTER_MODEL ="nvidia/nemotron-3-super-120b-a12b:free"
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")  # free router; selects an available free chat model
 EMBED_MODEL    = "BAAI/bge-small-en-v1.5"  # 384-dim model; matches the existing persistent Qdrant index
 COHERE_RERANK  = "rerank-english-v3.0"     # best free reranker
 CROSS_ENCODER_MODEL  = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # sentence scoring (22MB)
